@@ -68,6 +68,10 @@ mqtt:
   broker: !secret aws_iot_endpoint
   port: 8883
   discovery: false
+  # Must be off for AWS IoT Core: discover_ip subscribes to esphome/discover
+  # and esphome/ping/* at QoS 2, which IoT Core rejects by dropping the
+  # entire connection.
+  discover_ip: false
   topic_prefix: ${device_name}
   # Must match the client-id allowed by the IoT policy — ESPHome's default
   # appends a MAC suffix, which IoT Core would reject on Connect.

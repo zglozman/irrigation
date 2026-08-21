@@ -13,4 +13,4 @@ export function getBedrockClient(): AnthropicBedrockMantle {
   return bedrockClient;
 }
 
-export const CHAT_MODEL = process.env.CHAT_MODEL || "us.anthropic.claude-opus-5";
+export const CHAT_MODEL = process.env.CHAT_MODEL || "anthropic.claude-opus-5";

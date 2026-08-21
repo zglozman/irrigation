@@ -1,12 +1,9 @@
 // Instrumentation hook for Next.js
-// Sets up node-cron jobs for the scheduler and executor
-// Only runs in Node.js runtime, not during build
-
-import cron from "node-cron";
-import { startupSafetyCheck, executeDueRuns } from "@/jobs/execute-runs";
-import { reevaluateAllZones } from "@/jobs/reevaluate-schedule";
-import { listUserSubs } from "@/lib/dynamo";
-import { config } from "@/lib/config";
+// Sets up node-cron jobs for the scheduler and executor.
+//
+// IMPORTANT: no top-level imports of app code here. Next bundles this file
+// for every runtime (including Edge, where node:crypto and the AWS SDK don't
+// exist); everything must be dynamically imported inside the nodejs guard.
 
 let registered = false;
 
@@ -17,6 +14,15 @@ export async function register() {
   // Guard against double-registration
   if (registered) return;
   registered = true;
+
+  const [{ default: cron }, { startupSafetyCheck, executeDueRuns }, { reevaluateAllZones }, { listUserSubs }, { config }] =
+    await Promise.all([
+      import("node-cron"),
+      import("@/jobs/execute-runs"),
+      import("@/jobs/reevaluate-schedule"),
+      import("@/lib/dynamo").then((m) => ({ listUserSubs: m.listUserSubs })),
+      import("@/lib/config"),
+    ]);
 
   console.log("[Instrumentation] Setting up cron jobs");
 

@@ -153,12 +153,23 @@ export class IrrigationStack extends cdk.Stack {
           {
             Effect: 'Allow',
             Action: 'iot:Subscribe',
-            Resource: `arn:aws:iot:${this.region}:${this.account}:topicfilter/irrigation-controller/*`,
+            Resource: [
+              `arn:aws:iot:${this.region}:${this.account}:topicfilter/irrigation-controller/*`,
+              // ESPHome always subscribes to the global dashboard-discovery
+              // topic (even with discovery: false); AWS IoT drops the whole
+              // connection on an unauthorized SUBSCRIBE.
+              `arn:aws:iot:${this.region}:${this.account}:topicfilter/esphome/discover`,
+            ],
           },
           {
             Effect: 'Allow',
-            Action: ['iot:Publish', 'iot:Receive'],
-            Resource: `arn:aws:iot:${this.region}:${this.account}:topic/irrigation-controller/*`,
+            // RetainPublish: ESPHome's birth/last-will status message is
+            // retained; AWS IoT refuses the whole CONNECT without it.
+            Action: ['iot:Publish', 'iot:Receive', 'iot:RetainPublish'],
+            Resource: [
+              `arn:aws:iot:${this.region}:${this.account}:topic/irrigation-controller/*`,
+              `arn:aws:iot:${this.region}:${this.account}:topic/esphome/discover`,
+            ],
           },
         ],
       },
@@ -169,8 +180,9 @@ export class IrrigationStack extends cdk.Stack {
       userName: 'irrigation-app',
     });
 
-    // Inline policy for the app
-    const appPolicy = new iam.Policy(this, 'IrrigationAppPolicy', {
+    // Customer-managed policy for the app (shared by the IAM user and the
+    // ECS task role; inline user policies are capped at 2048 bytes).
+    const appPolicy = new iam.ManagedPolicy(this, 'IrrigationAppManagedPolicy', {
       statements: [
         // DynamoDB permissions
         new iam.PolicyStatement({
@@ -259,10 +271,17 @@ export class IrrigationStack extends cdk.Stack {
         // enabled for Anthropic models in the Bedrock console for this region)
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+          actions: [
+            'bedrock:InvokeModel',
+            'bedrock:InvokeModelWithResponseStream',
+            // The Anthropic Mantle client (Messages-API Bedrock endpoint)
+            // authorizes against its own action/resource namespace.
+            'bedrock-mantle:CreateInference',
+          ],
           resources: [
             `arn:aws:bedrock:*::foundation-model/anthropic.*`,
             `arn:aws:bedrock:*:${this.account}:inference-profile/*`,
+            `arn:aws:bedrock-mantle:*:${this.account}:project/*`,
           ],
         }),
 
@@ -293,7 +312,7 @@ export class IrrigationStack extends cdk.Stack {
       ],
     });
 
-    iamUser.attachInlinePolicy(appPolicy);
+    appPolicy.attachToUser(iamUser);
 
     // ==================== ECS Fargate + ALB + CloudFront ====================
     // One always-on container in the default VPC; the same image runs on
@@ -344,7 +363,7 @@ export class IrrigationStack extends cdk.Stack {
         COGNITO_USER_POOL_ID: userPool.userPoolId,
         COGNITO_CLIENT_ID: appClient.userPoolClientId,
         IOT_TOPIC_PREFIX: 'irrigation-controller',
-        CHAT_MODEL: 'us.anthropic.claude-opus-5',
+        CHAT_MODEL: 'anthropic.claude-opus-5',
         LATITUDE: '40.7128',
         LONGITUDE: '-74.0060',
         TIMEZONE: 'America/New_York',

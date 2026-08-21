@@ -65,7 +65,7 @@ The app includes an AI chat assistant powered by AWS Bedrock and Claude, providi
    }
    ```
 
-3. Set `CHAT_MODEL` in `.env` (default: `us.anthropic.claude-opus-5`)
+3. Set `CHAT_MODEL` in `.env` (default: `anthropic.claude-opus-5`)
 
 The chat widget appears as a floating button in the bottom-right corner of the dashboard.
 
