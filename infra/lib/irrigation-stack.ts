@@ -292,6 +292,13 @@ export class IrrigationStack extends cdk.Stack {
           resources: ['*'],
         }),
 
+        // Read the device's retained state topics (switchboard live states)
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['iot:GetRetainedMessage'],
+          resources: [`arn:aws:iot:${this.region}:${this.account}:topic/irrigation-controller/*`],
+        }),
+
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['iot:Publish'],

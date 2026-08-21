@@ -7,7 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 
-function NavIcon({ icon }: { icon: "dashboard" | "zones" | "settings" }) {
+function NavIcon({ icon }: { icon: "dashboard" | "zones" | "settings" | "weather" | "switches" }) {
   switch (icon) {
     case "dashboard":
       return (
@@ -34,6 +34,18 @@ function NavIcon({ icon }: { icon: "dashboard" | "zones" | "settings" }) {
           />
         </svg>
       );
+    case "weather":
+      return (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 20 20">
+          <path d="M4.3 12.98a8 8 0 1011.55-8.42M9.5 4.5a4 4 0 100 8 4 4 0 000-8z" />
+        </svg>
+      );
+    case "switches":
+      return (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+        </svg>
+      );
   }
 }
 
@@ -44,7 +56,7 @@ function NavLink({
   active,
 }: {
   href: string;
-  icon: "dashboard" | "zones" | "settings";
+  icon: "dashboard" | "zones" | "settings" | "weather" | "switches";
   label: string;
   active: boolean;
 }) {
@@ -122,6 +134,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             icon="zones"
             label="Zones"
             active={pathname.startsWith("/zones")}
+          />
+          <NavLink
+            href="/weather"
+            icon="weather"
+            label="Weather"
+            active={pathname === "/weather"}
+          />
+          <NavLink
+            href="/switches"
+            icon="switches"
+            label="Switchboard"
+            active={pathname === "/switches"}
           />
           <NavLink
             href="/settings"

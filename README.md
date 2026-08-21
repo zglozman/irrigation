@@ -10,6 +10,10 @@ A personal smart-irrigation system: a 16-channel relay board in the yard, a serv
 |---|---|
 | ![Zone editor](docs/screenshots/zone-editor.png) | ![Sprout chat](docs/screenshots/sprout-chat.png) |
 
+| Full weather data | Relay switchboard |
+|---|---|
+| ![Weather](docs/screenshots/weather.png) | ![Switchboard](docs/screenshots/switchboard.png) |
+
 ## How it works
 
 ```
