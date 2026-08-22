@@ -8,6 +8,11 @@ interface RelayStates {
   [channel: number]: "ON" | "OFF" | "UNKNOWN";
 }
 
+interface BoardStatus {
+  state: "online" | "offline" | "unknown";
+  since: string | null;
+}
+
 function ToggleSwitch({
   channel,
   state,
@@ -52,16 +57,22 @@ function RelayTile({
   state,
   loading,
   error,
+  dimmed,
   onToggle,
 }: {
   channel: number;
   state: "ON" | "OFF" | "UNKNOWN";
   loading: boolean;
   error?: string;
+  dimmed?: boolean;
   onToggle: (on: boolean) => void;
 }) {
   return (
-    <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg text-center">
+    <div
+      className={`p-4 bg-slate-900 border border-slate-800 rounded-lg text-center transition-opacity ${
+        dimmed ? "opacity-50" : ""
+      }`}
+    >
       <div className="text-3xl font-bold text-white mb-3">Relay {channel}</div>
       <div className="flex justify-center mb-3">
         <ToggleSwitch channel={channel} state={state} loading={loading} onChange={onToggle} />
@@ -87,12 +98,17 @@ export default function SwitchboardPage() {
   const [tileErrors, setTileErrors] = useState<Record<number, string>>({});
   const [lastCommandAt, setLastCommandAt] = useState<Record<number, number>>({});
   const [allOffFailed, setAllOffFailed] = useState<number[]>([]);
+  const [boardStatus, setBoardStatus] = useState<BoardStatus>({ state: "unknown", since: null });
 
   useEffect(() => {
     loadStates();
+    loadBoardStatus();
 
     // Poll every 5 seconds
-    const interval = setInterval(loadStates, 5000);
+    const interval = setInterval(() => {
+      loadStates();
+      loadBoardStatus();
+    }, 5000);
 
     return () => clearInterval(interval);
   }, []);
@@ -126,6 +142,17 @@ export default function SwitchboardPage() {
       console.error("[Switches] Load error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadBoardStatus = async () => {
+    try {
+      const response = await fetch("/api/device/status");
+      if (!response.ok) throw new Error("Failed to load board status");
+      const data = await response.json();
+      setBoardStatus(data.board || { state: "unknown", since: null });
+    } catch (err) {
+      console.error("[Switches] Board status error:", err);
     }
   };
 
@@ -260,6 +287,16 @@ export default function SwitchboardPage() {
         <p className="text-slate-400">Direct relay control</p>
       </div>
 
+      {/* Offline banner */}
+      {boardStatus.state !== "online" && (
+        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3">
+          <div className="text-2xl">🔌</div>
+          <div className="flex-1">
+            <div className="font-semibold text-red-300">Board is offline — commands will not reach it</div>
+          </div>
+        </div>
+      )}
+
       {/* Warning banner */}
       <div className="mb-6 p-4 bg-amber-900/30 border border-amber-600/50 rounded-lg flex items-start gap-3">
         <div className="text-2xl">⚡</div>
@@ -303,6 +340,7 @@ export default function SwitchboardPage() {
               state={state}
               loading={isLoading}
               error={tileError}
+              dimmed={boardStatus.state !== "online"}
               onToggle={(on) => handleToggle(channel, on)}
             />
           );

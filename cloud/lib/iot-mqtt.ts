@@ -107,3 +107,99 @@ export async function getAllRelayStates(): Promise<Record<number, string>> {
   await Promise.all(promises);
   return states;
 }
+
+/**
+ * Publish a raw message to a topic
+ * @param topic - MQTT topic
+ * @param payload - String payload
+ */
+export async function publishRaw(topic: string, payload: string): Promise<void> {
+  const client = await getIoTDataClient();
+
+  await client.send(
+    new PublishCommand({
+      topic,
+      qos: 1,
+      payload: payload,
+    })
+  );
+}
+
+/**
+ * Get retained message as JSON
+ * @param topic - MQTT topic
+ * @returns Parsed JSON or null if not found/invalid
+ */
+export async function getRetainedJson(topic: string): Promise<any | null> {
+  try {
+    const client = await getIoTDataClient();
+
+    const result = await client.send(
+      new GetRetainedMessageCommand({
+        topic,
+      })
+    );
+
+    if (!result.payload) {
+      return null;
+    }
+
+    const payloadStr = new TextDecoder().decode(result.payload);
+    try {
+      return JSON.parse(payloadStr);
+    } catch {
+      return null;
+    }
+  } catch (error: any) {
+    // ResourceNotFoundException means no retained message
+    if (error.name === "ResourceNotFoundException") {
+      return null;
+    }
+    console.error(`Error getting retained message from ${topic}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Get board online/offline status with timestamp
+ * @returns { state: "online"|"offline"|"unknown", since: ISO timestamp or null }
+ */
+export async function getBoardStatus(): Promise<{
+  state: "online" | "offline" | "unknown";
+  since: string | null;
+}> {
+  try {
+    const client = await getIoTDataClient();
+
+    const result = await client.send(
+      new GetRetainedMessageCommand({
+        topic: `${config.iot.topicPrefix}/status`,
+      })
+    );
+
+    // Default to unknown with no timestamp
+    let state: "online" | "offline" | "unknown" = "unknown";
+    let since: string | null = null;
+
+    if (result.payload) {
+      const payloadStr = new TextDecoder().decode(result.payload);
+      try {
+        const status = JSON.parse(payloadStr);
+        if (status && typeof status.online === "boolean") {
+          state = status.online ? "online" : "offline";
+        }
+      } catch {
+        // Parse error, keep state as "unknown"
+      }
+    }
+
+    // Convert lastModifiedTime (epoch ms) to ISO timestamp
+    if (result.lastModifiedTime) {
+      since = new Date(result.lastModifiedTime).toISOString();
+    }
+
+    return { state, since };
+  } catch {
+    return { state: "unknown", since: null };
+  }
+}

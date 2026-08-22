@@ -8,6 +8,23 @@ substitutions:
 esphome:
   name: ${device_name}
   friendly_name: Irrigation Controller
+  # Version drives the remote OTA update check (manifest vs running build).
+  project:
+    name: "zglozman.irrigation"
+    version: "1.2.1"
+  includes:
+    - wifi_scan_helper.h
+  on_boot:
+    - priority: 200
+      then:
+        - lambda: |-
+            // Without saved credentials the wifi component's connect state
+            // machine flaps the network stack (and the MQTT session with it).
+            // Keep it disabled until provisioning saves credentials.
+            if (!wifi::global_wifi_component->has_sta() && !wifi::global_wifi_component->is_disabled()) {
+              wifi::global_wifi_component->disable();
+              ESP_LOGI("wifiprov", "no credentials; wifi component disabled");
+            }
 
 # ESP-IDF framework is required for MQTT mutual-TLS (client certificates)
 # used to authenticate to AWS IoT Core.
@@ -43,8 +60,7 @@ update:
     name: Firmware Update
     source: !secret ota_manifest_url
 
-# Board is PoE/Ethernet-first. If your PoE injector/switch isn't in yet,
-# comment this out and uncomment the wifi: block below instead.
+# Board is PoE/Ethernet-first, with WiFi as fallback
 ethernet:
   type: LAN8720
   mdc_pin: GPIO23
@@ -54,12 +70,22 @@ ethernet:
     pin: 17
   phy_addr: 0
 
-# wifi:
-#   ssid: !secret wifi_ssid
-#   password: !secret wifi_password
-#   ap:
-#     ssid: "${device_name} Fallback Hotspot"
-#     password: !secret ota_password
+# WiFi fallback (no hardcoded credentials; persisted via MQTT commands).
+# Radio stays OFF at boot: an idle credential-less wifi component flaps the
+# network stack and drops the MQTT session every few minutes. Provisioning
+# scans use the direct-driver helper (wifi_scan_helper.h); the component is
+# enabled only once credentials are saved.
+wifi:
+  enable_on_boot: false
+  ap:
+    ssid: "${device_name} Setup"
+    password: !secret ota_password
+
+# Network priority: ethernet preferred, wifi fallback
+network:
+  priority:
+    - ethernet
+    - wifi
 
 # AWS IoT Core over mutual TLS. The cloud scheduler publishes ON/OFF to
 # ${device_name}/switch/relay_N/command; ESPHome publishes state and
@@ -79,11 +105,142 @@ mqtt:
   certificate_authority: !secret aws_root_ca
   client_certificate: !secret aws_iot_device_cert
   client_certificate_key: !secret aws_iot_device_key
+  on_connect:
+    - lambda: |-
+        // Publish current network status on connect
+        std::string active = "unknown";
+
+        if (wifi::global_wifi_component != nullptr && wifi::global_wifi_component->is_connected()) {
+          active = "wifi";
+        } else if (ethernet::global_eth_component != nullptr && ethernet::global_eth_component->is_connected()) {
+          active = "ethernet";
+        }
+
+        std::string ts = str_sprintf("%lld", (long long) time(nullptr));
+        std::string payload = "{\"active\":\"" + active + "\",\"ts\":" + ts + "}";
+        mqtt::global_mqtt_client->publish("irrigation-controller/wifi/status", payload, 0, true);
+  on_message:
+    - topic: irrigation-controller/wifi/scan
+      then:
+        - lambda: |-
+            // Direct driver scan (see wifi_scan_helper.h). The ESPHome wifi
+            // component stays disabled so its connect state machine cannot
+            // abort the scan or flap MQTT.
+            bool ok = wifiprov::start_scan();
+            ESP_LOGI("wifiprov", "scan request: start_scan=%d", (int) ok);
+            id(wifi_scan_countdown) = 10;  // 10 ticks x 2s = 20s window
+    - topic: irrigation-controller/wifi/set
+      then:
+        - lambda: |-
+            std::string payload_str = x;
+            // Simple JSON parsing for {"ssid":"...","password":"..."}
+            size_t ssid_start = payload_str.find("\"ssid\":\"");
+            size_t password_start = payload_str.find("\"password\":\"");
+
+            if (ssid_start != std::string::npos && password_start != std::string::npos) {
+              ssid_start += 8; // Length of "\"ssid\":\""
+              size_t ssid_end = payload_str.find("\"", ssid_start);
+
+              password_start += 13; // Length of "\"password\":\""
+              size_t password_end = payload_str.find("\"", password_start);
+
+              if (ssid_end != std::string::npos && password_end != std::string::npos) {
+                std::string ssid(payload_str.substr(ssid_start, ssid_end - ssid_start));
+                std::string password(payload_str.substr(password_start, password_end - password_start));
+
+                // The direct-driver scan must release the radio before the
+                // component takes over.
+                wifiprov::stop();
+
+                // Save credentials and bring the component up as a real
+                // fallback interface — with credentials it connects instead
+                // of flapping.
+                wifi::global_wifi_component->save_wifi_sta(ssid, password);
+                if (wifi::global_wifi_component->is_disabled()) {
+                  wifi::global_wifi_component->enable();
+                }
+
+                // Publish confirmation (never echo password)
+                std::string confirm = "{\"configured\":\"" + ssid + "\",\"ts\":" + str_sprintf("%lld", (long long) time(nullptr)) + "}";
+                mqtt::global_mqtt_client->publish("irrigation-controller/wifi/status", confirm, 0, true);
+              }
+            }
+
+globals:
+  - id: wifi_scan_countdown
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # Bringing the radio up briefly drops the MQTT session, so scan results are
+  # parked here and published once the session is back.
+  - id: wifi_scan_json
+    type: std::string
+    restore_value: no
+  - id: wifi_scan_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 # Web dashboard on the device's IP — lets you flip relays from a browser
 # with zero cloud/backend involved, good for bench testing.
 web_server:
   port: 80
+
+interval:
+  # WiFi scan result publisher: polls the direct-driver scan and publishes
+  # as soon as results land (or an empty list when the window expires).
+  - interval: 2s
+    then:
+      - lambda: |-
+          // Deferred publish: the radio bring-up drops MQTT briefly, so
+          // results wait here until the session is back.
+          if (id(wifi_scan_pending) && mqtt::global_mqtt_client->is_connected()) {
+            ESP_LOGI("wifiprov", "publishing parked scan results");
+            mqtt::global_mqtt_client->publish("irrigation-controller/wifi/networks", id(wifi_scan_json), 0, true);
+            id(wifi_scan_pending) = false;
+            id(wifi_scan_json).clear();
+          }
+
+          if (id(wifi_scan_countdown) <= 0) return;
+          id(wifi_scan_countdown) -= 1;
+
+          // Retry the driver scan mid-window if nothing has landed yet.
+          if (id(wifi_scan_countdown) == 5 && wifiprov::result_count() == 0) {
+            ESP_LOGI("wifiprov", "mid-window rescan");
+            wifiprov::start_scan();
+            return;
+          }
+
+          // Collect as soon as results exist, or when the window expires.
+          bool have = wifiprov::result_count() > 0;
+          if (!have && id(wifi_scan_countdown) != 0) return;
+          ESP_LOGI("wifiprov", "scan finished (count=%d, tick=%d); parking results for publish", wifiprov::result_count(), id(wifi_scan_countdown));
+          id(wifi_scan_countdown) = 0;
+
+          id(wifi_scan_json) = wifiprov::collect_json();
+          id(wifi_scan_pending) = true;
+          // Radio back off unless the component owns it (post-provisioning);
+          // stopping it also lets Ethernet MQTT re-establish immediately.
+          if (wifi::global_wifi_component->is_disabled()) {
+            wifiprov::stop();
+          }
+
+  # Periodic network status heartbeat
+  - interval: 30s
+    then:
+      - lambda: |-
+          std::string active = "unknown";
+
+          if (wifi::global_wifi_component != nullptr && wifi::global_wifi_component->is_connected()) {
+            active = "wifi";
+          } else if (ethernet::global_eth_component != nullptr && ethernet::global_eth_component->is_connected()) {
+            active = "ethernet";
+          }
+
+          if (active != "unknown") {
+            std::string payload = "{\"active\":\"" + active + "\",\"ts\":" + str_sprintf("%lld", (long long) time(nullptr)) + "}";
+            mqtt::global_mqtt_client->publish("irrigation-controller/wifi/status", payload, 0, true);
+          }
 
 i2c:
   sda: GPIO16
