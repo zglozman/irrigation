@@ -182,14 +182,10 @@ export async function getBoardStatus(): Promise<{
     let since: string | null = null;
 
     if (result.payload) {
-      const payloadStr = new TextDecoder().decode(result.payload);
-      try {
-        const status = JSON.parse(payloadStr);
-        if (status && typeof status.online === "boolean") {
-          state = status.online ? "online" : "offline";
-        }
-      } catch {
-        // Parse error, keep state as "unknown"
+      // ESPHome's birth/last-will payload is the plain string "online"/"offline".
+      const payloadStr = new TextDecoder().decode(result.payload).trim();
+      if (payloadStr === "online" || payloadStr === "offline") {
+        state = payloadStr;
       }
     }
 
