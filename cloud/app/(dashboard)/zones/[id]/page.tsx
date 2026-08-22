@@ -6,6 +6,45 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getZoneTypes } from "@/domain/water-need-calculator";
 
+interface HistoryItem {
+  timestamp: string;
+  zone_id: string;
+  relay_channel: number;
+  trigger_type: string;
+  outcome: string;
+  scheduled_runtime_min: number | null;
+  actual_runtime_min: number | null;
+  gallons_estimated_delivered: number | null;
+  reason: string;
+}
+
+function getOutcomeBadgeColor(outcome: string) {
+  switch (outcome) {
+    case "RAN":
+      return "bg-green-500/20 text-green-300 border-green-500/30";
+    case "SKIPPED":
+      return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+    case "SCHEDULED":
+      return "bg-sky-500/20 text-sky-300 border-sky-500/30";
+    case "DELAYED":
+      return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+    case "REDUCED":
+      return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+    case "FAILED":
+      return "bg-red-500/20 text-red-300 border-red-500/30";
+    default:
+      return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+  }
+}
+
+function formatLocalTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
 interface Zone {
   zone_id: string;
   name: string;
@@ -45,6 +84,9 @@ export default function ZoneDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -86,11 +128,37 @@ export default function ZoneDetailPage() {
         location: data.location || "",
         plantConfig: data.plantConfig || formData.plantConfig,
       });
+
+      // Load history for this zone's relay channel
+      await loadHistory(data.relay_channel);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load zone";
       setError(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadHistory = async (relayChannel: number) => {
+    if (!Number.isInteger(relayChannel) || relayChannel < 1 || relayChannel > 16) {
+      setHistoryError("Zone has no valid relay channel — history unavailable");
+      return;
+    }
+    try {
+      setHistoryLoading(true);
+      setHistoryError("");
+      const response = await fetch(`/api/history?zone=${relayChannel}&days=30`);
+      if (!response.ok) {
+        setHistoryError("Could not load run history");
+        return;
+      }
+      const data = await response.json();
+      setHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load history:", err);
+      setHistoryError("Could not load run history");
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -431,6 +499,74 @@ export default function ZoneDetailPage() {
           </button>
         </div>
       </form>
+
+      {/* Run History */}
+      {!isNew && (
+        <div className="mt-12">
+          <h2 className="text-xl font-bold text-white mb-4">Run History</h2>
+
+          {historyLoading ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
+              <p className="text-slate-400">Loading history...</p>
+            </div>
+          ) : historyError ? (
+            <div className="bg-slate-900 border border-red-500/30 rounded-lg p-8 text-center">
+              <p className="text-red-400">{historyError}</p>
+            </div>
+          ) : history.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
+              <p className="text-slate-400">No runs yet — history appears after the first watering</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800">
+                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Time</th>
+                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Trigger</th>
+                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Outcome</th>
+                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Scheduled (min)</th>
+                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Actual (min)</th>
+                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Gallons</th>
+                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((item, idx) => (
+                    <tr key={idx} className="border-b border-slate-800 hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3 text-slate-400 font-mono text-xs">
+                        {formatLocalTime(item.timestamp)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 text-xs">{item.trigger_type}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium border ${getOutcomeBadgeColor(
+                            item.outcome
+                          )}`}
+                        >
+                          {item.outcome}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {item.scheduled_runtime_min != null ? Number(item.scheduled_runtime_min).toFixed(1) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {item.actual_runtime_min != null ? Number(item.actual_runtime_min).toFixed(1) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {item.gallons_estimated_delivered != null ? Number(item.gallons_estimated_delivered).toFixed(1) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 font-mono text-xs max-w-xs truncate">
+                        {item.reason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  cloud:
+    name: Cloud (Next.js)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: cloud
+
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: cloud
+
+      - name: Run tests
+        run: npm test
+        working-directory: cloud
+
+      - name: Build
+        run: npm run build
+        working-directory: cloud
+
+  infra:
+    name: Infra (CDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: infra
+
+      - name: Build TypeScript
+        run: npm run build
+        working-directory: infra
+
+      - name: Run tests
+        run: npm test
+        working-directory: infra
+
+      - name: Synthesize CDK
+        run: npx cdk synth --quiet
+        working-directory: infra
+        env:
+          # Unset AWS credentials so we rely only on context
+          AWS_ACCESS_KEY_ID: ""
+          AWS_SECRET_ACCESS_KEY: ""
+          AWS_SESSION_TOKEN: ""
+          AWS_PROFILE: ""

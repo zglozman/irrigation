@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { commandRelay } from "@/lib/iot-mqtt";
+import { writeIrrigationLog } from "@/lib/s3-logs";
+import { IrrigationLogBuilder } from "@/domain/irrigation-log";
 
 export async function POST(
   request: NextRequest,
@@ -49,6 +51,33 @@ export async function POST(
 
     // Send command via MQTT
     await commandRelay(channel, on);
+
+    // Log the switchboard command (non-blocking, don't fail the relay)
+    (async () => {
+      try {
+        const logEntry = new IrrigationLogBuilder()
+          .zoneId("switchboard")
+          .relayChannel(channel)
+          .timestamp(new Date())
+          .triggerType("MANUAL")
+          .scheduledRuntimeMin(0)
+          .actualRuntimeMin(0)
+          .gallonsDelivered(0)
+          .weeklyTargetGal(0)
+          .remainingBefore(0)
+          .remainingAfter(0)
+          .rainfallMeasuredIn(0)
+          .rainfallGalEquiv(0)
+          .weatherSnapshot({})
+          .outcome("RAN")
+          .reason(`Switchboard: relay ${channel} commanded ${on ? "ON" : "OFF"}`)
+          .build();
+
+        await writeIrrigationLog(logEntry);
+      } catch (err) {
+        console.error(`[Switches] Failed to log relay ${channel} command:`, err);
+      }
+    })();
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

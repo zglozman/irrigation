@@ -1,3 +1,4 @@
+.env
 .venv/
 .esphome/
 firmware/secrets.yaml

@@ -14,6 +14,9 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 
 export class IrrigationStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -453,6 +456,81 @@ export class IrrigationStack extends cdk.Stack {
     // weather APIs); acknowledge the cfn-guard F3031 lint.
     cdk.Annotations.of(serviceSg).acknowledgeWarning('CloudFormation-Validate::F3031');
     cdk.Annotations.of(albSg).acknowledgeWarning('CloudFormation-Validate::F3031');
+
+    // ==================== Watchdog Lambda ====================
+    // Safety net: monitor relays and force OFF if no active schedule covers them
+    // IoT endpoint: ATS endpoint from describe-endpoint call (hardcoded for synth-time safety)
+    const IOT_ENDPOINT = 'a32q2fgemc15sw-ats.iot.us-east-1.amazonaws.com';
+
+    const watchdogRole = new iam.Role(this, 'WatchdogLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      description: 'Runtime role for the irrigation watchdog Lambda',
+    });
+
+    // CloudWatch Logs
+    watchdogRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'logs:CreateLogGroup',
+          'logs:CreateLogStream',
+          'logs:PutLogEvents',
+        ],
+        resources: [`arn:aws:logs:${this.region}:${this.account}:*`],
+      })
+    );
+
+    // DynamoDB: Scan for active schedules
+    watchdogRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['dynamodb:Scan'],
+        resources: [table.tableArn],
+      })
+    );
+
+    // S3: Write watchdog logs
+    watchdogRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['s3:PutObject'],
+        resources: [`${dataBucket.bucketArn}/irrigation-events/*`],
+      })
+    );
+
+    // IoT: Get retained messages and publish commands
+    watchdogRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['iot:GetRetainedMessage', 'iot:Publish'],
+        resources: [`arn:aws:iot:${this.region}:${this.account}:topic/irrigation-controller/*`],
+      })
+    );
+
+    const watchdogFunction = new lambda.Function(this, 'WatchdogFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      code: lambda.Code.fromAsset('lambda/watchdog'),
+      handler: 'index.handler',
+      role: watchdogRole,
+      timeout: cdk.Duration.seconds(60),
+      environment: {
+        TABLE_NAME: table.tableName,
+        DATA_BUCKET: dataBucket.bucketName,
+        IOT_ENDPOINT: IOT_ENDPOINT,
+        TOPIC_PREFIX: 'irrigation-controller',
+        GRACE_MINUTES: '15',
+      },
+      memorySize: 256,
+      logRetention: logs.RetentionDays.ONE_WEEK,
+    });
+
+    // EventBridge rule: trigger every 5 minutes
+    const watchdogRule = new events.Rule(this, 'WatchdogRule', {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(5)),
+      description: 'Irrigation watchdog: monitor and force-off orphaned relays',
+    });
+
+    watchdogRule.addTarget(new targets.LambdaFunction(watchdogFunction));
 
     // ==================== Outputs ====================
     new cdk.CfnOutput(this, 'UserPoolId', {

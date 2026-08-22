@@ -6,9 +6,16 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { ChatWidget } from "@/components/chat/ChatWidget";
+import { ActivityBadge } from "@/components/ActivityBadge";
 
-function NavIcon({ icon }: { icon: "dashboard" | "zones" | "settings" | "weather" | "switches" | "device" }) {
+function NavIcon({ icon }: { icon: "dashboard" | "zones" | "settings" | "weather" | "switches" | "device" | "activity" }) {
   switch (icon) {
+    case "activity":
+      return (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M2 3a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm4 6a2 2 0 100-4 2 2 0 000 4zm0 2a4 4 0 100-8 4 4 0 000 8zm8-7a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+        </svg>
+      );
     case "dashboard":
       return (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -62,7 +69,7 @@ function NavLink({
   active,
 }: {
   href: string;
-  icon: "dashboard" | "zones" | "settings" | "weather" | "switches" | "device";
+  icon: "dashboard" | "zones" | "settings" | "weather" | "switches" | "device" | "activity";
   label: string;
   active: boolean;
 }) {
@@ -127,6 +134,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <p className="text-slate-400 text-xs mt-1">Control System</p>
         </div>
 
+        {/* Activity Badge */}
+        <div className="px-4 py-3 border-b border-slate-800">
+          <ActivityBadge />
+        </div>
+
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-2">
           <NavLink
@@ -140,6 +152,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             icon="zones"
             label="Zones"
             active={pathname.startsWith("/zones")}
+          />
+          <NavLink
+            href="/activity"
+            icon="activity"
+            label="Activity"
+            active={pathname === "/activity"}
           />
           <NavLink
             href="/weather"
