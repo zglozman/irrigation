@@ -11,7 +11,7 @@ esphome:
   # Version drives the remote OTA update check (manifest vs running build).
   project:
     name: "zglozman.irrigation"
-    version: "1.2.1"
+    version: "1.2.2"
   includes:
     - wifi_scan_helper.h
   on_boot:
@@ -155,6 +155,9 @@ mqtt:
                 // Save credentials and bring the component up as a real
                 // fallback interface — with credentials it connects instead
                 // of flapping.
+                id(wifi_cfg_ssid) = ssid;
+                id(wifi_error).clear();
+                id(wifi_fail_ticks) = 0;
                 wifi::global_wifi_component->save_wifi_sta(ssid, password);
                 if (wifi::global_wifi_component->is_disabled()) {
                   wifi::global_wifi_component->enable();
@@ -180,6 +183,16 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: wifi_cfg_ssid
+    type: std::string
+    restore_value: no
+  - id: wifi_error
+    type: std::string
+    restore_value: no
+  - id: wifi_fail_ticks
+    type: int
+    restore_value: no
+    initial_value: '0'
 
 # Web dashboard on the device's IP — lets you flip relays from a browser
 # with zero cloud/backend involved, good for bench testing.
@@ -225,22 +238,36 @@ interval:
             wifiprov::stop();
           }
 
-  # Periodic network status heartbeat
+  # Periodic network status heartbeat + WiFi-failure watchdog: endless failed
+  # WPA handshakes churn the network stack and flap the Ethernet MQTT session,
+  # so after ~90s of failures (with Ethernet healthy) WiFi is turned back off
+  # and the error surfaced to the UI.
   - interval: 30s
     then:
       - lambda: |-
-          std::string active = "unknown";
+          bool wifi_up = wifi::global_wifi_component != nullptr && wifi::global_wifi_component->is_connected();
+          bool eth_up = ethernet::global_eth_component != nullptr && ethernet::global_eth_component->is_connected();
 
-          if (wifi::global_wifi_component != nullptr && wifi::global_wifi_component->is_connected()) {
-            active = "wifi";
-          } else if (ethernet::global_eth_component != nullptr && ethernet::global_eth_component->is_connected()) {
-            active = "ethernet";
+          if (wifi_up) {
+            id(wifi_fail_ticks) = 0;
+            id(wifi_error).clear();
+          } else if (!wifi::global_wifi_component->is_disabled() &&
+                     wifi::global_wifi_component->has_sta() && eth_up) {
+            id(wifi_fail_ticks) += 1;
+            if (id(wifi_fail_ticks) >= 3) {
+              ESP_LOGW("wifiprov", "wifi failing to connect; disabling to protect ethernet session");
+              wifi::global_wifi_component->disable();
+              id(wifi_error) = "connect failed - check password and try again";
+              id(wifi_fail_ticks) = 0;
+            }
           }
 
-          if (active != "unknown") {
-            std::string payload = "{\"active\":\"" + active + "\",\"ts\":" + str_sprintf("%lld", (long long) time(nullptr)) + "}";
-            mqtt::global_mqtt_client->publish("irrigation-controller/wifi/status", payload, 0, true);
-          }
+          std::string active = wifi_up ? "wifi" : (eth_up ? "ethernet" : "unknown");
+          std::string payload = "{\"active\":\"" + active + "\"";
+          if (!id(wifi_cfg_ssid).empty()) payload += ",\"configured\":\"" + id(wifi_cfg_ssid) + "\"";
+          if (!id(wifi_error).empty()) payload += ",\"error\":\"" + id(wifi_error) + "\"";
+          payload += ",\"ts\":" + str_sprintf("%lld", (long long) time(nullptr)) + "}";
+          mqtt::global_mqtt_client->publish("irrigation-controller/wifi/status", payload, 0, true);
 
 i2c:
   sda: GPIO16
