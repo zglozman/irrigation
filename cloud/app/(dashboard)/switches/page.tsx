@@ -38,7 +38,8 @@ function ToggleSwitch({
       }`}
     >
       <button
-        onClick={() => onChange(!treatAsOff)}
+        aria-label={`Toggle relay ${channel}`}
+        onClick={() => onChange(treatAsOff)}
         disabled={loading}
         className="relative inline-flex h-6 w-11 items-center rounded-full bg-current opacity-75 disabled:opacity-50 transition-opacity"
       >
