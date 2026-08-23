@@ -206,6 +206,55 @@ export class IrrigationStack extends cdk.Stack {
       },
     });
 
+    // Measured station weather — one line per hour per day, backfilled from
+    // Weather Underground history and appended nightly. The "actual" side of
+    // forecast accuracy and future planner training data.
+    new glue.CfnTable(this, 'StationObservationsTable', {
+      catalogId: this.account,
+      databaseName: glueDatabase.ref,
+      tableInput: {
+        name: 'station_observations',
+        tableType: 'EXTERNAL_TABLE',
+        parameters: {
+          'projection.enabled': 'true',
+          'projection.year.type': 'integer',
+          'projection.year.range': '2020,2100',
+          'projection.month.type': 'integer',
+          'projection.month.range': '1,12',
+          'projection.month.digits': '2',
+          'projection.day.type': 'integer',
+          'projection.day.range': '1,31',
+          'projection.day.digits': '2',
+          'storage.location.template': `s3://${dataBucket.bucketName}/station-observations/year=\${year}/month=\${month}/day=\${day}`,
+          'classification': 'json',
+        },
+        storageDescriptor: {
+          columns: [
+            { name: 'station_id', type: 'string' },
+            { name: 'time_utc', type: 'string' },
+            { name: 'time_local', type: 'string' },
+            { name: 'temp_f', type: 'double' },
+            { name: 'wind_mph', type: 'double' },
+            { name: 'wind_high_mph', type: 'double' },
+            { name: 'humidity', type: 'double' },
+            { name: 'precip_accum_in', type: 'double' },
+            { name: 'precip_hourly_in', type: 'double' },
+          ],
+          location: `s3://${dataBucket.bucketName}/station-observations/`,
+          inputFormat: 'org.apache.hadoop.mapred.TextInputFormat',
+          outputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
+          serdeInfo: {
+            serializationLibrary: 'org.openx.data.jsonserde.JsonSerDe',
+          },
+        },
+        partitionKeys: [
+          { name: 'year', type: 'string' },
+          { name: 'month', type: 'string' },
+          { name: 'day', type: 'string' },
+        ],
+      },
+    });
+
     // ==================== IoT Core ====================
     const iotThing = new iot.CfnThing(this, 'IrrigationController', {
       thingName: 'irrigation-controller',
@@ -276,6 +325,7 @@ export class IrrigationStack extends cdk.Stack {
           resources: [
             `${dataBucket.bucketArn}/irrigation-events/*`,
             `${dataBucket.bucketArn}/forecast-snapshots/*`,
+            `${dataBucket.bucketArn}/station-observations/*`,
           ],
         }),
 
@@ -293,7 +343,7 @@ export class IrrigationStack extends cdk.Stack {
           resources: [dataBucket.bucketArn],
           conditions: {
             StringLike: {
-              's3:prefix': ['athena-results/*', 'irrigation-events/*', 'forecast-snapshots/*'],
+              's3:prefix': ['athena-results/*', 'irrigation-events/*', 'forecast-snapshots/*', 'station-observations/*'],
             },
           },
         }),
@@ -312,6 +362,7 @@ export class IrrigationStack extends cdk.Stack {
           resources: [
             `${dataBucket.bucketArn}/irrigation-events/*`,
             `${dataBucket.bucketArn}/forecast-snapshots/*`,
+            `${dataBucket.bucketArn}/station-observations/*`,
           ],
         }),
 
@@ -342,6 +393,7 @@ export class IrrigationStack extends cdk.Stack {
             `arn:aws:glue:${this.region}:${this.account}:database/irrigation`,
             `arn:aws:glue:${this.region}:${this.account}:table/irrigation/irrigation_events`,
             `arn:aws:glue:${this.region}:${this.account}:table/irrigation/forecast_snapshots`,
+            `arn:aws:glue:${this.region}:${this.account}:table/irrigation/station_observations`,
           ],
         }),
 

@@ -76,4 +76,37 @@ export async function register() {
   } catch (error) {
     console.error("[Instrumentation] Failed to register reevaluation job:", error);
   }
+
+  // Nightly station-history job: at 00:15 local, log yesterday's full day of
+  // hourly station observations to S3/Athena. Idempotent (one object per day).
+  try {
+    cron.schedule("15 0 * * *", async () => {
+      try {
+        const [{ resolveWUCredentials }, { getWUHourlyHistory }, { writeStationDayObservations }] =
+          await Promise.all([
+            import("@/weather"),
+            import("@/weather/wunderground"),
+            import("@/lib/s3-logs"),
+          ]);
+        const creds = await resolveWUCredentials();
+        if (!creds) return; // no station configured
+
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const dateLocal = new Intl.DateTimeFormat("en-CA", {
+          timeZone: config.location.timezone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(yesterday); // YYYY-MM-DD
+        const rows = await getWUHourlyHistory(creds.stationId, creds.apiKey, dateLocal.replaceAll("-", ""));
+        await writeStationDayObservations(creds.stationId, dateLocal, rows);
+        console.log(`[Cron] Logged ${rows.length} station observations for ${dateLocal}`);
+      } catch (error) {
+        console.error("[Cron] Nightly station-history job error:", error);
+      }
+    }, { timezone: config.location.timezone });
+    console.log("[Instrumentation] Registered nightly station-history job (15 0 * * *)");
+  } catch (error) {
+    console.error("[Instrumentation] Failed to register station-history job:", error);
+  }
 }

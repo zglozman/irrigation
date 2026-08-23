@@ -103,3 +103,76 @@ export async function writeForecastSnapshot(
     })
   );
 }
+
+export interface StationObservationLine {
+  station_id: string;
+  time_utc: string;
+  time_local: string;
+  temp_f: number | null;
+  wind_mph: number | null;
+  wind_high_mph: number | null;
+  humidity: number | null;
+  precip_accum_in: number;
+  precip_hourly_in: number;
+}
+
+/**
+ * Shape one local day of station observations into JSONL lines.
+ * precip_hourly_in is derived from the running daily accumulation
+ * (clamped at 0 in case the accumulator resets mid-day).
+ */
+export function buildStationDayLines(
+  stationId: string,
+  rows: Array<{
+    time_utc: string;
+    time_local: string;
+    temp_f: number | null;
+    wind_mph: number | null;
+    wind_high_mph: number | null;
+    precip_accum_in: number;
+    humidity: number | null;
+  }>
+): StationObservationLine[] {
+  let prevAccum = 0;
+  return rows.map((r) => {
+    const hourly = Math.max(0, (r.precip_accum_in ?? 0) - prevAccum);
+    prevAccum = r.precip_accum_in ?? 0;
+    return {
+      station_id: stationId,
+      time_utc: r.time_utc,
+      time_local: r.time_local,
+      temp_f: r.temp_f,
+      wind_mph: r.wind_mph,
+      wind_high_mph: r.wind_high_mph,
+      humidity: r.humidity,
+      precip_accum_in: r.precip_accum_in ?? 0,
+      precip_hourly_in: Math.round(hourly * 1000) / 1000,
+    };
+  });
+}
+
+/**
+ * Write one local day of station observations to S3. The key is
+ * deterministic per station+day, so re-running a backfill or the nightly
+ * job simply overwrites the same object — idempotent by construction.
+ */
+export async function writeStationDayObservations(
+  stationId: string,
+  dateLocal: string, // YYYY-MM-DD (station-local day)
+  rows: Parameters<typeof buildStationDayLines>[1]
+): Promise<void> {
+  const lines = buildStationDayLines(stationId, rows);
+  if (lines.length === 0) return;
+
+  const [year, month, day] = dateLocal.split("-");
+  const s3Key = `station-observations/year=${year}/month=${month}/day=${day}/hourly-${stationId}.jsonl`;
+
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: config.aws.dataBucket,
+      Key: s3Key,
+      Body: lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+      ContentType: "application/x-jsonlines",
+    })
+  );
+}
