@@ -3,6 +3,7 @@
 
 import { config } from "@/lib/config";
 import InviteForm from "./invite-form";
+import RainStationForm from "./rain-station-form";
 
 // Config comes from the container's runtime env — never prerender at build time.
 export const dynamic = "force-dynamic";
@@ -17,52 +18,57 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
-        <p className="text-slate-400">System configuration and user management</p>
+    <div className="mx-auto max-w-[720px] px-5 pb-8 md:px-12">
+      <div className="flex items-baseline justify-between pb-3.5 pt-6 md:pt-8">
+        <h1 className="font-display text-[27px] font-bold leading-tight tracking-[-0.02em] text-ink">
+          settings
+        </h1>
+        <span className="font-mono text-[11px] text-fern">how the garden is wired</span>
       </div>
 
-      <div className="max-w-2xl space-y-8">
+      <div className="flex flex-col gap-4">
         {/* Weather Config */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
-          <h2 className="text-lg font-bold text-white">Weather &amp; Location</h2>
+        <div className="card flex flex-col gap-3.5 p-4">
+          <h2 className="font-display text-[16px] font-semibold tracking-[-0.01em] text-ink">
+            Weather &amp; location
+          </h2>
 
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Latitude</span>
-              <span className="text-white font-mono">{display.latitude}</span>
+          <div className="flex flex-col text-sm">
+            <div className="flex justify-between py-2.5">
+              <span className="text-fern">Latitude</span>
+              <span className="font-mono text-ink">{display.latitude}</span>
             </div>
-            <div className="flex justify-between border-t border-slate-800 pt-3">
-              <span className="text-slate-400">Longitude</span>
-              <span className="text-white font-mono">{display.longitude}</span>
+            <div className="flex justify-between border-t border-hairline py-2.5">
+              <span className="text-fern">Longitude</span>
+              <span className="font-mono text-ink">{display.longitude}</span>
             </div>
-            <div className="flex justify-between border-t border-slate-800 pt-3">
-              <span className="text-slate-400">Timezone</span>
-              <span className="text-white font-mono">{display.timezone}</span>
+            <div className="flex justify-between border-t border-hairline py-2.5">
+              <span className="text-fern">Timezone</span>
+              <span className="font-mono text-ink">{display.timezone}</span>
             </div>
-            <div className="flex justify-between border-t border-slate-800 pt-3">
-              <span className="text-slate-400">Weather Provider</span>
-              <span className="text-white font-mono">Tomorrow.io</span>
+            <div className="flex justify-between border-t border-hairline py-2.5">
+              <span className="text-fern">Weather provider</span>
+              <span className="font-mono text-ink">Tomorrow.io</span>
             </div>
-            <div className="flex justify-between border-t border-slate-800 pt-3">
-              <span className="text-slate-400">Tempest Station</span>
-              <span className="text-white font-mono">
-                {display.tempestConfigured ? "Configured" : "Not configured"}
+            <div className="flex justify-between border-t border-hairline py-2.5">
+              <span className="text-fern">Tempest station</span>
+              <span className="font-mono text-ink">
+                {display.tempestConfigured ? "configured" : "not configured"}
               </span>
             </div>
-            <div className="flex justify-between border-t border-slate-800 pt-3">
-              <span className="text-slate-400">Supply Capacity</span>
-              <span className="text-white font-mono">{display.supplyCapacityGph} GPH</span>
+            <div className="flex justify-between border-t border-hairline py-2.5">
+              <span className="text-fern">Supply capacity</span>
+              <span className="font-mono text-ink">{display.supplyCapacityGph} gph</span>
             </div>
           </div>
 
-          <p className="text-xs text-slate-500 pt-3 border-t border-slate-800">
+          <p className="border-t border-hairline pt-3 text-[11px] leading-normal text-fern">
             Configuration is set via environment variables. Contact your system administrator to
             change these settings.
           </p>
         </div>
 
+        <RainStationForm />
         <InviteForm />
       </div>
     </div>

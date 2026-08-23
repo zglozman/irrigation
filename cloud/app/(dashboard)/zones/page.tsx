@@ -1,4 +1,4 @@
-// Zones listing page
+// Beds listing page — simple hairline rows
 
 "use client";
 
@@ -41,76 +41,65 @@ export default function ZonesPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <p className="text-slate-400">Loading zones...</p>
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-fern">counting the beds…</p>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Zones</h1>
-          <p className="text-slate-400">Manage your irrigation zones</p>
-        </div>
-        <Link
-          href="/zones/new"
-          className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded font-medium transition-colors"
-        >
-          New Zone
+    <div className="mx-auto max-w-[720px] px-5 pb-8 md:px-12">
+      <div className="flex items-baseline justify-between pb-3.5 pt-6 md:pt-8">
+        <h1 className="font-display text-[27px] font-bold leading-tight tracking-[-0.02em] text-ink">
+          beds
+        </h1>
+        <Link href="/zones/new" className="pill pill-soft h-11 px-[18px] text-[13px]">
+          new bed
         </Link>
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded text-red-400">
-          {error}
-        </div>
+        <div className="mb-4 rounded-[12px] bg-claytint p-3.5 text-sm text-clay">{error}</div>
       )}
 
       {zones.length === 0 ? (
-        <div className="text-center py-12 bg-slate-900/50 border border-slate-800 rounded-lg">
-          <p className="text-slate-400 mb-4">No zones created yet</p>
-          <Link
-            href="/zones/new"
-            className="inline-block px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded font-medium transition-colors"
-          >
-            Create Your First Zone
+        <div className="card flex flex-col items-center gap-4 p-8 text-center">
+          <p className="text-sm text-fern">nothing planted yet</p>
+          <Link href="/zones/new" className="pill pill-primary h-11 px-5 text-sm">
+            plant the first bed
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col">
           {zones.map((zone) => (
             <Link
               key={zone.zone_id}
               href={`/zones/${zone.zone_id}`}
-              className="block bg-slate-900 border border-slate-800 rounded-lg p-4 hover:border-slate-700 hover:shadow-lg transition-all"
+              className="press flex min-h-[44px] items-center justify-between gap-3 border-t border-hairline py-3.5"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-white hover:text-teal-400 transition-colors">
-                    {zone.name}
-                  </h3>
-                  <div className="flex space-x-4 mt-2 text-sm text-slate-400">
-                    <span>Relay {zone.relay_channel}</span>
-                    <span>{zone.area_sqft.toFixed(0)} sq ft</span>
-                    <span>{zone.plantConfig?.zone_type || "Unknown"}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <svg
-                    className="w-5 h-5 text-slate-600 group-hover:text-slate-400"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate font-display text-[17px] font-semibold leading-tight tracking-[-0.01em] text-ink">
+                  {zone.name.toLowerCase()}
+                </span>
+                <span className="font-mono text-[11px] text-fern">
+                  valve {zone.relay_channel} · {zone.area_sqft.toFixed(0)} sq ft ·{" "}
+                  {zone.plantConfig?.zone_type || "unplanted"}
+                </span>
               </div>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#b7c4b3"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="shrink-0"
+                aria-hidden="true"
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
             </Link>
           ))}
         </div>

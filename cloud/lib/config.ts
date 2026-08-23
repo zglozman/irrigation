@@ -16,6 +16,8 @@ export const config = {
     userPoolId: process.env.COGNITO_USER_POOL_ID,
     clientId: process.env.COGNITO_CLIENT_ID,
     clientSecret: process.env.COGNITO_CLIENT_SECRET,
+    // Hosted auth domain used for federated (Google) sign-in.
+    domain: process.env.COGNITO_DOMAIN || "sprout-irrigation.auth.us-east-1.amazoncognito.com",
   },
 
   iot: {

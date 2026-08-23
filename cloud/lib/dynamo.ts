@@ -21,7 +21,9 @@ function getDynamoClient(): DynamoDBDocumentClient {
       region: config.aws.region,
     };
     const baseClient = new DynamoDBClient(clientConfig);
-    dynamoClient = DynamoDBDocumentClient.from(baseClient);
+    dynamoClient = DynamoDBDocumentClient.from(baseClient, {
+      marshallOptions: { removeUndefinedValues: true },
+    });
   }
   return dynamoClient;
 }
@@ -93,6 +95,14 @@ export interface DeviceItem {
   thing_name: string;
   cert_id?: string;
   last_heartbeat?: string; // ISO timestamp
+}
+
+export interface WeatherSettingsItem {
+  PK: string; // APP
+  SK: string; // SETTINGS#WEATHER
+  wu_station_id?: string;
+  wu_api_key?: string;
+  updated_at: string; // ISO timestamp
 }
 
 // Zone operations
@@ -420,4 +430,38 @@ export async function listUserSubs(): Promise<string[]> {
   } while (exclusiveStartKey);
 
   return Array.from(subs);
+}
+
+// Weather settings operations (app-global single item)
+export async function getWeatherSettings(): Promise<WeatherSettingsItem | null> {
+  const client = getDynamoClient();
+  const result = await client.send(
+    new GetCommand({
+      TableName: config.aws.tableName,
+      Key: {
+        PK: "APP",
+        SK: "SETTINGS#WEATHER",
+      },
+    })
+  );
+  return (result.Item as WeatherSettingsItem) || null;
+}
+
+export async function putWeatherSettings(settings: {
+  wu_station_id?: string;
+  wu_api_key?: string;
+}): Promise<void> {
+  const client = getDynamoClient();
+  await client.send(
+    new PutCommand({
+      TableName: config.aws.tableName,
+      Item: {
+        PK: "APP",
+        SK: "SETTINGS#WEATHER",
+        wu_station_id: settings.wu_station_id,
+        wu_api_key: settings.wu_api_key,
+        updated_at: new Date().toISOString(),
+      },
+    })
+  );
 }

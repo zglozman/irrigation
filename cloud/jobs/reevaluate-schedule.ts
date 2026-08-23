@@ -9,7 +9,7 @@ import {
   putScheduleIfNotActive,
   getSchedule,
 } from "@/lib/dynamo";
-import { writeIrrigationLog } from "@/lib/s3-logs";
+import { writeIrrigationLog, writeForecastSnapshot } from "@/lib/s3-logs";
 import { IrrigationLogBuilder } from "@/domain/irrigation-log";
 import { scheduleDecision } from "@/domain/scheduling";
 import { getForecastProvider, getRainfallProvider } from "@/weather";
@@ -35,7 +35,7 @@ export async function reevaluateAllZones(userSub: string): Promise<void> {
     }
 
     const forecastProvider = getForecastProvider();
-    const rainfallProvider = getRainfallProvider();
+    const rainfallProvider = await getRainfallProvider();
 
     // Get forecast (shared for all zones)
     let forecast: any[] = [];
@@ -53,6 +53,12 @@ export async function reevaluateAllZones(userSub: string): Promise<void> {
       console.error("[Scheduler] No forecast data available, skipping evaluation");
       return;
     }
+
+    // Snapshot what this evaluation saw — fire-and-forget so a logging
+    // failure can never block watering decisions.
+    writeForecastSnapshot(forecast).catch((err) =>
+      console.error("[Scheduler] Forecast snapshot write failed:", err)
+    );
 
     // Evaluate each zone
     const zonesNeedingWater: ZoneToRun[] = [];

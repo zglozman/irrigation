@@ -1,4 +1,6 @@
-// Switchboard page - direct relay control (bypasses scheduler)
+// Valves page — the manifold. Direct relay control (bypasses scheduler);
+// each valve is a tap on the supply line: vertical green handle = open,
+// horizontal stone handle = closed.
 
 "use client";
 
@@ -13,52 +15,44 @@ interface BoardStatus {
   since: string | null;
 }
 
-function ToggleSwitch({
-  channel,
-  state,
-  loading,
-  onChange,
-}: {
-  channel: number;
-  state: "ON" | "OFF" | "UNKNOWN";
-  loading: boolean;
-  onChange: (on: boolean) => void;
-}) {
-  const isOn = state === "ON";
-  const treatAsOff = state === "UNKNOWN" || state === "OFF";
-
+function ValveHandle({ open, unknown }: { open: boolean; unknown: boolean }) {
+  const color = open ? "#2f8f4e" : unknown ? "#a6b5a9" : "#b7c4b3";
   return (
-    <div
-      className={`relative inline-flex items-center rounded-full px-3 py-2 transition-all ${
-        loading ? "ring-2 ring-offset-1 ring-offset-slate-950 ring-teal-500 animate-pulse" : ""
-      } ${
-        isOn
-          ? "bg-teal-600 text-white"
-          : "bg-slate-700 text-slate-300"
-      }`}
-    >
-      <button
-        aria-label={`Toggle relay ${channel}`}
-        onClick={() => onChange(treatAsOff)}
-        disabled={loading}
-        className="relative inline-flex h-6 w-11 items-center rounded-full bg-current opacity-75 disabled:opacity-50 transition-opacity"
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-            isOn ? "translate-x-6" : "translate-x-1"
-          }`}
-        />
-      </button>
-    </div>
+    <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
+      <circle
+        cx="15"
+        cy="15"
+        r="12"
+        stroke={color}
+        strokeWidth="2.5"
+        style={{ transition: "stroke 300ms ease" }}
+      />
+      {/* one handle, rotated between open (vertical) and closed (horizontal) */}
+      <line
+        x1="15"
+        y1="5"
+        x2="15"
+        y2="25"
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        style={{
+          transform: open ? "rotate(0deg)" : "rotate(90deg)",
+          transformOrigin: "15px 15px",
+          transition: "transform 300ms cubic-bezier(0.25, 1, 0.5, 1), stroke 300ms ease",
+        }}
+      />
+    </svg>
   );
 }
 
-function RelayTile({
+function ValveTile({
   channel,
   state,
   loading,
   error,
   dimmed,
+  zoneName,
   onToggle,
 }: {
   channel: number;
@@ -66,27 +60,41 @@ function RelayTile({
   loading: boolean;
   error?: string;
   dimmed?: boolean;
+  zoneName?: string;
   onToggle: (on: boolean) => void;
 }) {
+  const isOn = state === "ON";
+  const treatAsOff = state === "UNKNOWN" || state === "OFF";
+
+  const caption =
+    state === "UNKNOWN"
+      ? "unknown"
+      : `${isOn ? "open" : "closed"}${zoneName ? ` · ${zoneName}` : ""}`;
+
   return (
-    <div
-      className={`p-4 bg-slate-900 border border-slate-800 rounded-lg text-center transition-opacity ${
-        dimmed ? "opacity-50" : ""
-      }`}
+    <button
+      aria-label={`Toggle relay ${channel}`}
+      onClick={() => onToggle(treatAsOff)}
+      disabled={loading}
+      className={`press flex min-h-[54px] items-center gap-3 rounded-[16px] border bg-white px-3.5 py-3 text-left ${
+        isOn ? "border-[#cfe0cf] [box-shadow:0_2px_10px_#2f8f4e1a]" : "border-hairline"
+      } ${dimmed ? "opacity-50" : ""} ${loading ? "animate-pulse" : ""}`}
     >
-      <div className="text-3xl font-bold text-white mb-3">Relay {channel}</div>
-      <div className="flex justify-center mb-3">
-        <ToggleSwitch channel={channel} state={state} loading={loading} onChange={onToggle} />
-      </div>
-      <div className="text-sm font-medium text-slate-400 mb-1">
-        {state === "UNKNOWN" ? "—" : state}
-      </div>
-      {error && (
-        <div className="text-xs text-red-400 mt-2 p-1 bg-red-900/20 rounded">
-          {error}
-        </div>
-      )}
-    </div>
+      <ValveHandle open={isOn} unknown={state === "UNKNOWN"} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-display text-[15px] font-semibold leading-tight text-ink">
+          {channel}
+        </span>
+        <span
+          className={`truncate text-[11px] ${
+            isOn ? "font-bold text-leaf" : "text-fern"
+          }`}
+        >
+          {caption}
+        </span>
+        {error && <span className="mt-0.5 text-[11px] text-clay">{error}</span>}
+      </span>
+    </button>
   );
 }
 
@@ -100,6 +108,7 @@ export default function SwitchboardPage() {
   const [lastCommandAt, setLastCommandAt] = useState<Record<number, number>>({});
   const [allOffFailed, setAllOffFailed] = useState<number[]>([]);
   const [boardStatus, setBoardStatus] = useState<BoardStatus>({ state: "unknown", since: null });
+  const [zoneByChannel, setZoneByChannel] = useState<Record<number, string>>({});
 
   useEffect(() => {
     loadStates();
@@ -112,6 +121,28 @@ export default function SwitchboardPage() {
     }, 5000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Zone-name captions where a zone maps to a channel
+  useEffect(() => {
+    const loadZones = async () => {
+      try {
+        const res = await fetch("/api/zones");
+        if (res.ok) {
+          const zones = await res.json();
+          const map: Record<number, string> = {};
+          for (const z of zones) {
+            if (z.relay_channel && z.name) {
+              map[z.relay_channel] = String(z.name).toLowerCase();
+            }
+          }
+          setZoneByChannel(map);
+        }
+      } catch (err) {
+        console.error("[Switches] Zones error:", err);
+      }
+    };
+    loadZones();
   }, []);
 
   const loadStates = async () => {
@@ -268,10 +299,8 @@ export default function SwitchboardPage() {
 
   if (error && loading) {
     return (
-      <div className="p-8">
-        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded text-red-400">
-          {error}
-        </div>
+      <div className="p-5 md:p-8">
+        <div className="rounded-[16px] bg-claytint p-4 text-sm text-clay">{error}</div>
       </div>
     );
   }
@@ -280,54 +309,94 @@ export default function SwitchboardPage() {
     ? { ...states, ...optimisticStates }
     : states;
 
+  const openCount = Array.from({ length: 16 }, (_, i) => i + 1).filter(
+    (ch) => displayStates[ch] === "ON"
+  ).length;
+  const flowFrac = openCount === 0 ? 0 : Math.min(1, 0.25 + (0.75 * openCount) / 16);
+
   return (
-    <div className="p-8">
+    <div className="mx-auto max-w-[980px] px-5 md:px-12">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Switchboard</h1>
-        <p className="text-slate-400">Direct relay control</p>
+      <div className="flex items-baseline justify-between pb-2 pt-6 md:pt-8">
+        <h1 className="font-display text-[27px] font-bold leading-tight tracking-[-0.02em] text-ink">
+          valves
+        </h1>
+        <button
+          onClick={handleAllOff}
+          disabled={inFlight.size > 0}
+          className="pill pill-stop h-11 px-[18px] text-[13px]"
+        >
+          close all
+        </button>
       </div>
 
       {/* Offline banner */}
       {boardStatus.state !== "online" && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3">
-          <div className="text-2xl">🔌</div>
-          <div className="flex-1">
-            <div className="font-semibold text-red-300">Board is offline — commands will not reach it</div>
-          </div>
+        <div className="mb-3 flex items-start gap-2.5 rounded-[12px] bg-claytint p-3.5">
+          <span className="text-lg" aria-hidden="true">
+            🔌
+          </span>
+          <span className="text-[12px] leading-normal text-clay">
+            the board is asleep — flips won&apos;t reach it right now.
+          </span>
         </div>
       )}
 
-      {/* Warning banner */}
-      <div className="mb-6 p-4 bg-amber-900/30 border border-amber-600/50 rounded-lg flex items-start gap-3">
-        <div className="text-2xl">⚡</div>
-        <div className="flex-1">
-          <div className="font-semibold text-amber-300">Direct relay control</div>
-          <div className="text-sm text-amber-300/70 mt-1">
-            Bypasses the scheduler and water budgets. The board force-closes any relay after 60 minutes.
-          </div>
-        </div>
+      {/* Pollen warning banner */}
+      <div className="mb-3.5 flex items-start gap-2.5 rounded-[12px] border border-[#eddfb4] bg-warntint px-3.5 py-3">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#c9972e"
+          strokeWidth="2"
+          strokeLinecap="round"
+          className="mt-0.5 shrink-0"
+          aria-hidden="true"
+        >
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+        </svg>
+        <span className="text-[12px] leading-normal text-[#8a6d2c]">
+          Hand-opened valves skip the schedule and water budgets. The board hard-stops
+          every valve after 60 min.
+        </span>
       </div>
 
       {error && !loading && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-sm">
+        <div className="mb-3.5 rounded-[12px] bg-claytint p-3.5 text-[12px] text-clay">
           {error}
+          {allOffFailed.length > 0 && (
+            <span className="mt-1 block font-mono text-[11px]">
+              still open: {allOffFailed.join(", ")}
+            </span>
+          )}
         </div>
       )}
 
-      {/* All off button */}
-      <div className="mb-6 flex justify-end">
-        <button
-          onClick={handleAllOff}
-          disabled={inFlight.size > 0}
-          className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 disabled:bg-slate-700 text-red-300 disabled:text-slate-500 border border-red-500/30 rounded-lg font-medium transition-colors disabled:opacity-50"
-        >
-          All Off
-        </button>
-      </div>
+      {/* Supply pipe */}
+      <svg
+        viewBox="0 0 346 16"
+        fill="none"
+        preserveAspectRatio="none"
+        className="mb-2.5 block h-4 w-full"
+        aria-hidden="true"
+      >
+        <rect y="5" width="346" height="6" rx="3" fill="#c9ab84" />
+        <rect
+          y="5"
+          width={346 * flowFrac}
+          height="6"
+          rx="3"
+          fill="#9ec9ef"
+          className="gauge-clip"
+        />
+      </svg>
 
-      {/* 4x4 grid of relays */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* Manifold: valves as taps on the supply line */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
         {Array.from({ length: 16 }, (_, i) => {
           const channel = i + 1;
           const state = displayStates[channel] || "UNKNOWN";
@@ -335,24 +404,25 @@ export default function SwitchboardPage() {
           const tileError = tileErrors[channel];
 
           return (
-            <RelayTile
+            <ValveTile
               key={channel}
               channel={channel}
               state={state}
               loading={isLoading}
               error={tileError}
               dimmed={boardStatus.state !== "online"}
+              zoneName={zoneByChannel[channel]}
               onToggle={(on) => handleToggle(channel, on)}
             />
           );
         })}
       </div>
 
-      {loading && (
-        <div className="mt-8 text-center text-slate-400">
-          Loading relay states...
-        </div>
-      )}
+      <div className="flex justify-center py-4">
+        <span className="font-mono text-[11px] text-fern">
+          {loading ? "listening to the board…" : "open handle = water flows"}
+        </span>
+      </div>
     </div>
   );
 }

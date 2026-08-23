@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface Location {
   lat: number;
@@ -165,17 +166,17 @@ function MetricTile({
 }) {
   return (
     <div
-      className={`p-3 rounded-lg border ${
-        highlight
-          ? "bg-teal-900/30 border-teal-600/50"
-          : "bg-slate-900/50 border-slate-700/50"
-      } text-center`}
+      className={`rounded-[14px] p-3 text-center ${
+        highlight ? "border border-[#cfe0cf] bg-tint" : "bg-track"
+      }`}
     >
-      {emoji && <div className="text-2xl mb-1">{emoji}</div>}
-      <div className="text-xs font-medium text-slate-400 mb-1">{label}</div>
-      <div className={`text-lg font-semibold ${highlight ? "text-teal-300" : "text-white"}`}>
+      {emoji && <div className="mb-1 text-2xl">{emoji}</div>}
+      <div className="mb-1 text-[11px] font-bold text-fern">{label}</div>
+      <div
+        className={`font-mono text-[16px] font-medium ${highlight ? "text-leafdark" : "text-ink"}`}
+      >
         {value}
-        {unit && <span className="text-sm ml-1">{unit}</span>}
+        {unit && <span className="ml-1 text-[12px] text-fern">{unit}</span>}
       </div>
     </div>
   );
@@ -207,16 +208,16 @@ export default function WeatherPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <p className="text-slate-400">Loading weather...</p>
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-fern">reading the sky…</p>
       </div>
     );
   }
 
   if (error || !forecast || !forecast.current) {
     return (
-      <div className="p-8">
-        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded text-red-400">
+      <div className="p-5 md:p-8">
+        <div className="rounded-[16px] bg-claytint p-4 text-sm text-clay">
           {error || "No forecast data available"}
         </div>
       </div>
@@ -267,33 +268,48 @@ export default function WeatherPage() {
     .filter(([, v]) => v !== null && v !== undefined);
 
   return (
-    <div className="p-8">
+    <div className="mx-auto max-w-[980px] px-5 pb-8 md:px-12">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Weather</h1>
-        <p className="text-slate-400 text-sm">
-          {forecast.location.lat.toFixed(4)}, {forecast.location.lon.toFixed(4)} •{" "}
-          {forecast.location.timezone}
-        </p>
+      <div className="flex items-baseline justify-between pb-3.5 pt-6 md:pt-8">
+        <h1 className="font-display text-[27px] font-bold leading-tight tracking-[-0.02em] text-ink">
+          weather
+        </h1>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] text-fern">
+            {forecast.location.lat.toFixed(4)}, {forecast.location.lon.toFixed(4)} ·{" "}
+            {forecast.location.timezone}
+          </span>
+          <Link
+            href="/weather/accuracy"
+            className="pill pill-soft text-[12px] h-8 px-3"
+          >
+            forecast vs. actual →
+          </Link>
+        </div>
       </div>
 
       {/* Now section */}
-      <div className="mb-8 p-6 bg-slate-900/50 border border-slate-700/50 rounded-lg">
-        <h2 className="text-lg font-bold text-white mb-6">Now</h2>
+      <div className="card mb-6 p-5">
+        <h2 className="mb-5 font-display text-[16px] font-semibold tracking-[-0.01em] text-sec">
+          Now
+        </h2>
 
         {/* Hero card with big temp */}
         <div className="mb-6 text-center">
-          <div className="text-6xl mb-2">{emoji}</div>
-          <div className="text-5xl font-bold text-white">
-            {tempF}°F <span className="text-2xl text-slate-400">/ {tempC.toFixed(0)}°C</span>
+          <div className="mb-2 text-6xl">{emoji}</div>
+          <div className="font-display text-5xl font-bold tracking-[-0.02em] text-ink">
+            {tempF}°F{" "}
+            <span className="font-mono text-2xl font-medium text-fern">
+              / {tempC.toFixed(0)}°C
+            </span>
           </div>
-          <div className="text-slate-400 mt-2">
+          <div className="mt-2 text-sec">
             Feels like {feelsF}°F / {feelsC.toFixed(0)}°C
           </div>
         </div>
 
         {/* Grid of all current metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           <MetricTile
             label="Humidity"
             value={current.humidity?.toFixed(0)}
@@ -358,15 +374,15 @@ export default function WeatherPage() {
 
         {/* All extra fields */}
         {extraFields.length > 0 && (
-          <details className="mt-6 pt-6 border-t border-slate-700/50">
-            <summary className="text-sm font-medium text-slate-400 cursor-pointer hover:text-slate-300">
+          <details className="mt-6 border-t border-hairline pt-5">
+            <summary className="cursor-pointer text-sm font-bold text-fern hover:text-sec">
               All fields ({extraFields.length})
             </summary>
             <div className="mt-4 space-y-2">
               {extraFields.map(([key, value]) => (
                 <div key={key} className="flex justify-between text-sm">
-                  <span className="text-slate-400">{key}:</span>
-                  <span className="text-white font-medium">{String(value)}</span>
+                  <span className="text-fern">{key}:</span>
+                  <span className="font-mono font-medium text-ink">{String(value)}</span>
                 </div>
               ))}
             </div>
@@ -375,17 +391,19 @@ export default function WeatherPage() {
 
         {/* Rain skip note */}
         {rainSkipLikely && (
-          <div className="mt-6 p-3 bg-blue-900/30 border border-blue-600/50 rounded text-sm text-blue-300">
+          <div className="mt-6 rounded-[12px] border border-[#cfe3f5] bg-[#eaf3fc] p-3 text-sm text-[#4f7ba6]">
             🌧️ Rain-skip conditions likely — Sprout will probably hold watering.
           </div>
         )}
       </div>
 
       {/* Next 48 hours */}
-      <div className="mb-8">
-        <h2 className="text-lg font-bold text-white mb-4">Next 48 hours</h2>
+      <div className="mb-6">
+        <h2 className="mb-3.5 font-display text-[16px] font-semibold tracking-[-0.01em] text-sec">
+          Next 48 hours
+        </h2>
         <div className="overflow-x-auto pb-4">
-          <div className="flex gap-2 min-w-max">
+          <div className="flex min-w-max gap-2">
             {forecast.hourly.slice(0, 48).map((hour) => {
               const hourTempC = hour.temperature || 0;
               const hourTempF = celsiusToFahrenheit(hourTempC);
@@ -399,15 +417,15 @@ export default function WeatherPage() {
               return (
                 <div
                   key={hour.time}
-                  className="flex-shrink-0 w-24 p-3 bg-slate-900/50 border border-slate-700/50 rounded text-center text-sm"
+                  className="card w-24 flex-shrink-0 rounded-[16px] p-3 text-center text-sm"
                 >
-                  <div className="text-xs text-slate-400 mb-1">{hourTime}</div>
-                  <div className="text-2xl mb-1">{hourEmoji}</div>
-                  <div className="font-semibold text-white mb-1">{hourTempF}°F</div>
-                  <div className="text-xs text-slate-400">
+                  <div className="mb-1 font-mono text-[11px] text-fern">{hourTime}</div>
+                  <div className="mb-1 text-2xl">{hourEmoji}</div>
+                  <div className="mb-1 font-mono font-medium text-ink">{hourTempF}°F</div>
+                  <div className="font-mono text-[11px] text-[#5e86ad]">
                     {(hour.precipitationProbability || 0).toFixed(0)}%
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="mt-1 font-mono text-[11px] text-fern">
                     {((hour.windSpeed || 0) * 2.23694).toFixed(0)}mph
                   </div>
                 </div>
@@ -418,22 +436,23 @@ export default function WeatherPage() {
 
         {/* Precipitation bar */}
         <div className="mt-4">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">Precipitation Probability</h3>
-          <div className="flex gap-1 h-12 bg-slate-900/50 rounded-lg p-1 overflow-x-auto">
+          <h3 className="mb-2 text-sm font-bold text-fern">Precipitation Probability</h3>
+          <div className="flex h-12 items-end gap-1 overflow-x-auto rounded-[12px] bg-track p-1">
             {forecast.hourly.slice(0, 48).map((hour) => {
               const prob = (hour.precipitationProbability || 0) / 100;
               return (
                 <div
                   key={hour.time}
-                  className="flex-1 flex-shrink-0 bg-slate-800 rounded-md transition-all hover:bg-slate-700 relative group"
+                  className="group relative flex-1 flex-shrink-0 rounded-md bg-rain transition-all hover:bg-[#7fb4e4]"
                   style={{
-                    height: `${prob * 100}%`,
-                    background: `linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%)`,
+                    height: `${Math.max(4, prob * 100)}%`,
+                    opacity: prob > 0 ? 1 : 0.25,
                   }}
                   title={`${(hour.precipitationProbability || 0).toFixed(0)}%`}
                 >
-                  <div className="invisible group-hover:visible absolute -top-6 left-1/2 transform -translate-x-1/2 bg-slate-700 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-                    {formatTime(hour.time, forecast.location.timezone)}: {(hour.precipitationProbability || 0).toFixed(0)}%
+                  <div className="invisible absolute -top-6 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded bg-ink px-2 py-1 font-mono text-xs text-white group-hover:visible">
+                    {formatTime(hour.time, forecast.location.timezone)}:{" "}
+                    {(hour.precipitationProbability || 0).toFixed(0)}%
                   </div>
                 </div>
               );
@@ -444,8 +463,10 @@ export default function WeatherPage() {
 
       {/* Next 6 days */}
       <div>
-        <h2 className="text-lg font-bold text-white mb-4">Next 6 days</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <h2 className="mb-3.5 font-display text-[16px] font-semibold tracking-[-0.01em] text-sec">
+          Next 6 days
+        </h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {forecast.daily.slice(0, 6).map((day) => {
             const minC = day.temperatureMin as number | undefined || 0;
             const maxC = day.temperatureMax as number | undefined || 0;
@@ -455,39 +476,36 @@ export default function WeatherPage() {
             const date = formatDate(day.time, forecast.location.timezone);
 
             return (
-              <div
-                key={day.time}
-                className="p-4 bg-slate-900/50 border border-slate-700/50 rounded-lg"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <div className="font-semibold text-white">{date}</div>
+              <div key={day.time} className="card p-4">
+                <div className="mb-3 flex items-start justify-between">
+                  <div className="font-display text-[15px] font-semibold tracking-[-0.01em] text-ink">
+                    {date}
                   </div>
                   <div className="text-3xl">{emoji}</div>
                 </div>
 
-                <div className="space-y-2 mb-3">
+                <div className="mb-1 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Temp</span>
-                    <span className="text-white font-medium">
+                    <span className="text-fern">Temp</span>
+                    <span className="font-mono font-medium text-ink">
                       {maxF}°F / {minF}°F
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Precip Prob</span>
-                    <span className="text-white font-medium">
+                    <span className="text-fern">Precip Prob</span>
+                    <span className="font-mono font-medium text-ink">
                       {(day.precipitationProbability || 0).toFixed(0)}%
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Accumulation</span>
-                    <span className="text-white font-medium">
+                    <span className="text-fern">Accumulation</span>
+                    <span className="font-mono font-medium text-ink">
                       {((day.rainAccumulation || 0) / 25.4).toFixed(2)}in
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Evapotranspiration</span>
-                    <span className="text-teal-300 font-medium">
+                    <span className="text-fern">Evapotranspiration</span>
+                    <span className="font-mono font-medium text-leaf">
                       {((day.evapotranspiration || 0) / 25.4).toFixed(3)}in
                     </span>
                   </div>

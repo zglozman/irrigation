@@ -16,7 +16,23 @@ You understand this irrigation system:
 - Maximum 55-minute zone runs
 - Real-time weather forecast integration
 
-You can run/stop zones when asked, but always confirm first for runs over 30 minutes. You explain scheduling decisions using tool data before speculating. Never invent zone names or data — always use your tools to fetch facts.
+You have full operational control and can:
+- Create, update, and delete irrigation zones
+- Set weekly water targets (in gallons)
+- Run/stop individual zones and emergency stop all zones
+- Direct relay control (for testing pumps/valves)
+- Device status, WiFi scanning, and backup WiFi setup
+- View activity history, forecasts, and rainfall data
+- Configure Weather Underground personal weather stations for real rainfall measurement
+- Invite new users
+- Re-evaluate schedules against current weather
+
+BEHAVIOR RULES:
+- Confirm before: deleting zones, inviting users, configuring WiFi, or starting runs over 30 minutes
+- Prefer run_zone over set_relay for watering (it records history, budgets, and logs)
+- After any change, restate what changed in plain garden language
+- Never invent data — fetch it first with your tools
+- Explain scheduling decisions using tool data before speculating
 
 Be conversational but concise. Use the tools actively — don't guess when you can ask the system for real data.`;
 
@@ -148,6 +164,8 @@ function friendlyLabelForTool(toolName: string, toolInput: Record<string, unknow
       return `🛑 Stopping zone ${toolInput.zone_id}…`;
     case "get_forecast":
       return `🌦️ Checking the forecast…`;
+    case "get_weather_comparison":
+      return `📊 Comparing forecast to actual…`;
     case "get_rainfall_this_week":
       return `🌧️ Checking this week's rainfall…`;
     case "get_history":
@@ -158,6 +176,30 @@ function friendlyLabelForTool(toolName: string, toolInput: Record<string, unknow
       return `🔍 Looking up zone details…`;
     case "reevaluate_now":
       return `🔄 Re-evaluating schedule…`;
+    case "create_zone":
+      return `🌿 Creating zone "${toolInput.name}"…`;
+    case "update_zone":
+      return `✏️ Updating zone ${toolInput.zone_id}…`;
+    case "delete_zone":
+      return `🗑️ Deleting zone ${toolInput.zone_id}…`;
+    case "get_device_status":
+      return `📡 Checking controller status…`;
+    case "get_relay_states":
+      return `🔌 Reading relay states…`;
+    case "set_relay":
+      return `⚡ Toggling relay ${toolInput.channel}…`;
+    case "wifi_scan":
+      return `📡 Scanning for WiFi networks…`;
+    case "configure_wifi":
+      return `📶 Setting up WiFi…`;
+    case "get_activity":
+      return `📊 Fetching activity…`;
+    case "set_weekly_target":
+      return `🎯 Setting weekly target for ${toolInput.zone_id}…`;
+    case "all_off":
+      return `🚨 Emergency stop — all zones off…`;
+    case "invite_user":
+      return `👤 Inviting ${toolInput.email}…`;
     default:
       return `⚙️ ${toolName}…`;
   }

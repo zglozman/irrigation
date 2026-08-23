@@ -1,4 +1,4 @@
-// ActivityBadge — live activity indicator in sidebar (client component)
+// ActivityBadge — the "N beds drinking" pill (client component)
 
 "use client";
 
@@ -48,31 +48,35 @@ export function ActivityBadge() {
 
   if (loading) {
     return (
-      <div className="flex items-center space-x-2 px-4 py-3 text-slate-400 text-sm">
-        <div className="w-2 h-2 bg-slate-600 rounded-full"></div>
-        <span>Loading...</span>
+      <div className="flex items-center gap-2 rounded-[10px] border border-inputb bg-white px-3 py-2.5">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-stone" />
+        <span className="text-[12px] font-bold text-fern">listening…</span>
       </div>
     );
   }
 
   if (!hasRunning) {
     return (
-      <div className="flex items-center space-x-2 px-4 py-3 text-slate-400 text-sm">
-        <div className="w-2 h-2 bg-slate-700 rounded-full"></div>
-        <span>Idle</span>
+      <div className="flex items-center gap-2 rounded-[10px] border border-inputb bg-white px-3 py-2.5">
+        <span className="h-2 w-2 rounded-full bg-stone" />
+        <span className="text-[12px] font-bold text-sec">all beds resting</span>
       </div>
     );
   }
 
+  const count = activity!.running.length;
+
   return (
-    <Link href="/activity">
-      <div className="flex items-center space-x-2 px-4 py-3 text-white text-sm hover:bg-slate-800 rounded-lg transition-colors">
-        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-        <div className="flex-1 min-w-0">
-          <div className="font-medium">{activity.running.length} running</div>
-          <div className="text-xs text-slate-400 truncate">
-            {firstRunning?.zone_name || `Relay ${firstRunning?.relay_channel}`}
-            {firstRunning?.remaining_min ? ` • ${firstRunning.remaining_min}m` : ""}
+    <Link href="/activity" className="press block">
+      <div className="flex items-center gap-2 rounded-[10px] border border-inputb bg-white px-3 py-2.5">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-leaflight" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-bold text-sec">
+            {count} {count === 1 ? "bed" : "beds"} drinking
+          </div>
+          <div className="truncate font-mono text-[11px] text-fern">
+            {(firstRunning?.zone_name || `valve ${firstRunning?.relay_channel}`).toLowerCase()}
+            {firstRunning?.remaining_min ? ` · ${firstRunning.remaining_min}m` : ""}
           </div>
         </div>
       </div>

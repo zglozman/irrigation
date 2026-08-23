@@ -17,6 +17,7 @@ interface StreamEvent {
 
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -25,6 +26,7 @@ export function ChatWidget() {
   const [chatError, setChatError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -39,6 +41,27 @@ export function ChatWidget() {
     if (!isOpen) abortRef.current?.abort();
     return () => abortRef.current?.abort();
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
+  // Exit along the same path the panel entered (slide back toward the pill).
+  const closePanel = () => {
+    if (closing) return;
+    setClosing(true);
+    closeTimerRef.current = setTimeout(() => {
+      setIsOpen(false);
+      setClosing(false);
+    }, 180);
+  };
+
+  const togglePanel = () => {
+    if (isOpen) closePanel();
+    else setIsOpen(true);
+  };
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -146,45 +169,48 @@ export function ChatWidget() {
 
   return (
     <>
-      {/* Floating button */}
+      {/* "ask sprout" pill — replaces the round FAB */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 z-40 group"
+        onClick={togglePanel}
+        className="press fixed bottom-[96px] right-4 z-40 flex min-h-[44px] items-center gap-2 rounded-full bg-gradient-to-br from-[#38a457] to-leaf px-[18px] py-3 [box-shadow:0_8px_22px_#2f8f4e4d] md:bottom-6 md:right-6"
         aria-label="Open Sprout chat"
       >
-        <div className="relative w-16 h-16">
-          <div className="absolute inset-0 bg-teal-500 rounded-full flex items-center justify-center text-2xl shadow-lg group-hover:shadow-xl transition-shadow animate-pulse">
-            🌱
-          </div>
-          <div className="absolute inset-0 bg-teal-400 rounded-full opacity-0 group-hover:opacity-20 transition-opacity animate-bounce" />
-        </div>
+        <span className="text-[17px]" aria-hidden="true">
+          🌱
+        </span>
+        <span className="text-[13px] font-bold text-white">ask sprout</span>
       </button>
 
-      {/* Chat panel */}
+      {/* Chat panel — anchored to the pill; enters and exits to the right */}
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-full sm:w-96 max-w-[calc(100vw-24px)] h-screen sm:h-96 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl flex flex-col">
+        <div
+          className={`${closing ? "anim-chat-out" : "anim-chat-in"} card fixed bottom-[152px] right-4 z-50 flex h-96 max-h-[60vh] w-full max-w-[calc(100vw-32px)] flex-col overflow-hidden border border-hairline [box-shadow:0_12px_40px_#24382a24] sm:w-96 md:bottom-24 md:right-6`}
+        >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-slate-800">
-            <h3 className="font-semibold text-white">Sprout 🌱 — your garden helper</h3>
+          <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+            <h3 className="font-display text-[14px] font-semibold tracking-[-0.01em] text-ink">
+              sprout 🌱 — your garden helper
+            </h3>
             <button
-              onClick={() => setIsOpen(false)}
-              className="text-slate-400 hover:text-white transition-colors"
+              onClick={closePanel}
+              className="press -m-2 flex h-10 w-10 items-center justify-center rounded-full text-fern hover:text-ink"
+              aria-label="Close chat"
             >
               ✕
             </button>
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto p-4">
             {isEmpty ? (
-              <div className="h-full flex flex-col items-center justify-center">
-                <p className="text-slate-400 text-sm mb-4">What can I help with?</p>
-                <div className="space-y-2 w-full">
+              <div className="flex h-full flex-col items-center justify-center">
+                <p className="mb-4 text-sm text-fern">What can I help with?</p>
+                <div className="w-full space-y-2">
                   {suggestions.map((suggestion, i) => (
                     <button
                       key={i}
                       onClick={() => handleSendMessage(suggestion)}
-                      className="w-full p-2 text-xs text-left bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors border border-slate-700"
+                      className="press w-full rounded-xl border border-inputb bg-white p-2.5 text-left text-xs text-sec hover:bg-tint"
                     >
                       {suggestion}
                     </button>
@@ -199,10 +225,10 @@ export function ChatWidget() {
                     className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                      className={`max-w-xs px-3 py-2 text-sm ${
                         msg.role === "user"
-                          ? "bg-teal-600 text-white"
-                          : "bg-slate-800 text-slate-100"
+                          ? "rounded-2xl rounded-br-md bg-leaf text-white"
+                          : "rounded-2xl rounded-bl-md bg-track text-ink"
                       }`}
                     >
                       {msg.content}
@@ -213,7 +239,7 @@ export function ChatWidget() {
                 {/* Streaming content */}
                 {streamingContent && (
                   <div className="flex justify-start">
-                    <div className="max-w-xs px-3 py-2 rounded-lg text-sm bg-slate-800 text-slate-100">
+                    <div className="max-w-xs rounded-2xl rounded-bl-md bg-track px-3 py-2 text-sm text-ink">
                       {streamingContent}
                     </div>
                   </div>
@@ -225,7 +251,7 @@ export function ChatWidget() {
                     {Array.from(toolsRunning.values()).map((label, i) => (
                       <div
                         key={i}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded-full animate-shimmer"
+                        className="animate-shimmer inline-flex items-center gap-1 rounded-full bg-tint px-2.5 py-1 text-xs font-semibold text-leafdark"
                       >
                         {label}
                       </div>
@@ -234,7 +260,7 @@ export function ChatWidget() {
                 )}
 
                 {chatError && (
-                  <div className="px-3 py-2 rounded-lg text-xs bg-red-500/10 border border-red-500/30 text-red-400">
+                  <div className="rounded-xl bg-claytint px-3 py-2 text-xs text-clay">
                     {chatError}
                   </div>
                 )}
@@ -245,7 +271,7 @@ export function ChatWidget() {
           </div>
 
           {/* Input */}
-          <div className="p-4 border-t border-slate-800">
+          <div className="border-t border-hairline p-3">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -258,15 +284,15 @@ export function ChatWidget() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask Sprout..."
-                className="flex-1 px-3 py-2 text-sm bg-slate-800 border border-slate-700 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                className="h-11 min-w-0 flex-1 rounded-full bg-track px-4 text-sm text-ink placeholder-fern focus:outline-none focus:ring-2 focus:ring-leaflight"
                 disabled={isLoading}
               />
               <button
                 type="submit"
                 disabled={isLoading || !input.trim()}
-                className="px-3 py-2 text-sm bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 text-white rounded font-medium transition-colors"
+                className="pill pill-primary h-11 px-4 text-sm"
               >
-                {isLoading ? "..." : "Send"}
+                {isLoading ? "…" : "send"}
               </button>
             </form>
           </div>

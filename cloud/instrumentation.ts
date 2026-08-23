@@ -11,6 +11,13 @@ export async function register() {
   // Only register in Node.js runtime and not during build
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Local dev safety: a second scheduler would race the ECS one against the
+  // real board. Set DISABLE_SCHEDULER=1 in local runs.
+  if (process.env.DISABLE_SCHEDULER === "1") {
+    console.log("[Instrumentation] Scheduler disabled via DISABLE_SCHEDULER=1");
+    return;
+  }
+
   // Guard against double-registration
   if (registered) return;
   registered = true;
@@ -51,9 +58,11 @@ export async function register() {
     console.error("[Instrumentation] Failed to register execution job:", error);
   }
 
-  // Hourly evaluation job: run at XX:00
+  // Hourly evaluation job: run at XX:02 — the weather station reports on the
+  // hour and half hour, so evaluating a couple of minutes after the hour reads
+  // a fresh station observation instead of racing it.
   try {
-    cron.schedule("0 * * * *", async () => {
+    cron.schedule("2 * * * *", async () => {
       try {
         const subs = await listUserSubs();
         for (const sub of subs) {
@@ -63,7 +72,7 @@ export async function register() {
         console.error("[Cron] Hourly reevaluation job error:", error);
       }
     }, { timezone: config.location.timezone });
-    console.log("[Instrumentation] Registered hourly reevaluation job (0 * * * *)");
+    console.log("[Instrumentation] Registered hourly reevaluation job (2 * * * *)");
   } catch (error) {
     console.error("[Instrumentation] Failed to register reevaluation job:", error);
   }

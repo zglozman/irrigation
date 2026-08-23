@@ -34,3 +34,11 @@ export async function cached<T>(
 
   return value;
 }
+
+/**
+ * Invalidate a cache entry
+ * @param key - Cache key to delete
+ */
+export function cacheDelete(key: string): void {
+  cache.delete(key);
+}

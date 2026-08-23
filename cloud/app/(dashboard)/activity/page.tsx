@@ -1,8 +1,10 @@
-// Activity page — running now + recent activity
+// Journal page — what the garden drank. "Running now" card plus a
+// day-grouped ledger of humanized entries.
 
 "use client";
 
 import { useEffect, useState } from "react";
+import { BedGaugeCompact } from "@/components/garden/BedGauge";
 
 interface RunningItem {
   zone_id: string;
@@ -30,47 +32,89 @@ interface ActivityData {
   recent: RecentItem[];
 }
 
-function getOutcomeBadgeColor(outcome: string) {
-  switch (outcome) {
+// dot color by outcome: watered leaf / rested stone / trimmed rain / failed clay
+function outcomeDot(item: RecentItem): string {
+  if (/watchdog/i.test(item.trigger_type) || /watchdog/i.test(item.reason)) return "#d26743";
+  switch (item.outcome) {
     case "RAN":
-      return "bg-green-500/20 text-green-300 border-green-500/30";
-    case "SKIPPED":
-      return "bg-slate-500/20 text-slate-300 border-slate-500/30";
-    case "SCHEDULED":
-      return "bg-sky-500/20 text-sky-300 border-sky-500/30";
-    case "DELAYED":
-      return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+      return "#2f8f4e";
     case "REDUCED":
-      return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+      return "#9ec9ef";
     case "FAILED":
-      return "bg-red-500/20 text-red-300 border-red-500/30";
+      return "#d26743";
     default:
-      return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+      // SKIPPED / DELAYED / SCHEDULED
+      return "#b7c4b3";
   }
 }
 
-function WaterFillBar({ percent }: { percent: number }) {
-  const clamped = Math.max(0, Math.min(100, percent));
-  return (
-    <div className="w-full bg-slate-700 rounded h-2 overflow-hidden">
-      <div
-        className="h-full bg-teal-500 transition-all duration-500"
-        style={{ width: `${clamped}%` }}
-      ></div>
-    </div>
-  );
+function entryTitle(item: RecentItem, zoneName: string): string {
+  if (/watchdog/i.test(item.trigger_type) || /watchdog/i.test(item.reason)) {
+    return `valve ${item.relay_channel} closed by the watchdog`;
+  }
+  switch (item.outcome) {
+    case "RAN":
+      return item.trigger_type === "MANUAL"
+        ? `${zoneName} hand-watered`
+        : `${zoneName} watered`;
+    case "SKIPPED":
+      return `${zoneName} rested`;
+    case "REDUCED":
+      return item.actual_runtime_min != null
+        ? `${zoneName} trimmed to ${Math.round(item.actual_runtime_min)} min`
+        : `${zoneName} trimmed`;
+    case "DELAYED":
+      return `${zoneName} held for later`;
+    case "SCHEDULED":
+      return `${zoneName} penciled in`;
+    case "FAILED":
+      return `${zoneName} didn't water`;
+    default:
+      return `${zoneName} — ${item.outcome.toLowerCase()}`;
+  }
 }
 
-function formatLocalTime(iso: string): string {
+function ledgerTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleString();
+    const d = new Date(iso);
+    let h = d.getHours();
+    const suffix = h >= 12 ? "p" : "a";
+    h = h % 12 || 12;
+    return `${h}:${String(d.getMinutes()).padStart(2, "0")}${suffix}`;
   } catch {
     return iso;
   }
 }
 
+function clockTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    let h = d.getHours();
+    const suffix = h >= 12 ? "pm" : "am";
+    h = h % 12 || 12;
+    return `${h}:${String(d.getMinutes()).padStart(2, "0")} ${suffix}`;
+  } catch {
+    return iso;
+  }
+}
+
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const that = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - that.getTime()) / 86400000);
+  if (diffDays === 0) return "today";
+  if (diffDays === 1) return "yesterday";
+  return d
+    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    .toLowerCase()
+    .replace(",", "");
+}
+
 export default function ActivityPage() {
   const [activity, setActivity] = useState<ActivityData | null>(null);
+  const [zoneNames, setZoneNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -94,6 +138,26 @@ export default function ActivityPage() {
     const interval = setInterval(fetchActivity, 10000); // Poll every 10s
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Zone names for humanized entry titles
+  useEffect(() => {
+    const loadNames = async () => {
+      try {
+        const res = await fetch("/api/zones");
+        if (res.ok) {
+          const zones = await res.json();
+          const map: Record<string, string> = {};
+          for (const z of zones) {
+            if (z.zone_id && z.name) map[z.zone_id] = String(z.name).toLowerCase();
+          }
+          setZoneNames(map);
+        }
+      } catch (err) {
+        console.error("Failed to load zone names:", err);
+      }
+    };
+    loadNames();
   }, []);
 
   const handleStop = async (item: RunningItem) => {
@@ -125,133 +189,126 @@ export default function ActivityPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <p className="text-slate-400">Loading activity...</p>
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-fern">opening the journal…</p>
       </div>
     );
   }
 
+  const nameFor = (item: RecentItem): string =>
+    zoneNames[item.zone_id] || (item.zone_id ? item.zone_id : `valve ${item.relay_channel}`);
+
+  // Day-group the ledger while keeping the API's ordering
+  const groups: Array<{ label: string; items: RecentItem[] }> = [];
+  for (const item of activity?.recent || []) {
+    const label = dayLabel(item.timestamp);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.items.push(item);
+    else groups.push({ label, items: [item] });
+  }
+
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Activity</h1>
-        <p className="text-slate-400">Real-time irrigation activity and history</p>
+    <div className="mx-auto max-w-[980px] px-5 md:px-12">
+      <div className="flex items-baseline justify-between pb-3.5 pt-6 md:pt-8">
+        <h1 className="font-display text-[27px] font-bold leading-tight tracking-[-0.02em] text-ink">
+          journal
+        </h1>
+        <span className="font-mono text-[11px] text-fern">what the garden drank</span>
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded text-red-400">
-          {error}
+        <div className="mb-4 rounded-[16px] bg-claytint p-4 text-sm text-clay">{error}</div>
+      )}
+
+      {/* Running now */}
+      {!activity?.running || activity.running.length === 0 ? (
+        <div className="card border border-hairline p-4 text-center">
+          <p className="text-sm text-fern">the garden is quiet — nothing drinking right now</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {activity.running.map((item, idx) => {
+            const startDate = new Date(item.actual_start);
+            const endDate = new Date(item.scheduled_end);
+            const scheduledTotal = Math.round(
+              (endDate.getTime() - startDate.getTime()) / 60000
+            );
+            const elapsedMin = scheduledTotal - item.remaining_min;
+            const fillPercent = scheduledTotal > 0 ? elapsedMin / scheduledTotal : 0;
+            const name = (item.zone_name || `valve ${item.relay_channel}`).toLowerCase();
+
+            return (
+              <div
+                key={idx}
+                className="card flex flex-col gap-2 border border-[#cfe0cf] px-4 py-3.5"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="h-[9px] w-[9px] shrink-0 animate-pulse rounded-full bg-leaf" />
+                  <span className="min-w-0 flex-1 truncate font-display text-[17px] font-semibold tracking-[-0.01em] text-ink">
+                    {item.raw ? `${name} is open` : `${name} ${item.zone_name ? "is drinking" : "is open"}`}
+                  </span>
+                  <button
+                    onClick={() => handleStop(item)}
+                    className="pill pill-stop h-11 px-[18px] text-[13px]"
+                  >
+                    stop
+                  </button>
+                </div>
+                <BedGaugeCompact frac={fillPercent} />
+                <span className="font-mono text-[11px] text-fern">
+                  {item.raw
+                    ? "opened by hand — no schedule behind it"
+                    : `started ${clockTime(item.actual_start)} · ${item.remaining_min} of ${scheduledTotal} min left`}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Running Now Section */}
-      <div className="mb-12">
-        <h2 className="text-xl font-bold text-white mb-4">Running Now</h2>
-
-        {!activity?.running || activity.running.length === 0 ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
-            <p className="text-slate-400">No irrigation running — system is idle</p>
+      {/* The ledger */}
+      <div className="flex flex-col pb-8 pt-3">
+        {groups.length === 0 ? (
+          <div className="card mt-2 p-8 text-center">
+            <p className="text-sm text-fern">
+              no entries yet — the journal fills in after the first watering
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activity.running.map((item, idx) => {
-              const totalMin = item.remaining_min;
-              const startDate = new Date(item.actual_start);
-              const endDate = new Date(item.scheduled_end);
-              const scheduledTotal = Math.round((endDate.getTime() - startDate.getTime()) / 60000);
-              const elapsedMin = scheduledTotal - item.remaining_min;
-              const fillPercent = scheduledTotal > 0 ? (elapsedMin / scheduledTotal) * 100 : 0;
-
-              return (
-                <div
-                  key={idx}
-                  className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4"
-                >
-                  <div>
-                    <h3 className="text-lg font-bold text-white">
-                      {item.zone_name || `Relay ${item.relay_channel}${item.raw ? " (manual)" : ""}`}
-                    </h3>
-                    <p className="text-sm text-slate-400 mt-1">
-                      Started {formatLocalTime(item.actual_start)}
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-slate-300">Progress</span>
-                      <span className="text-teal-400 font-medium">{item.remaining_min}m remaining</span>
-                    </div>
-                    <WaterFillBar percent={fillPercent} />
-                  </div>
-
-                  <button
-                    onClick={() => handleStop(item)}
-                    className="w-full px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 rounded transition-colors text-sm font-medium"
-                  >
-                    Stop
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Recent Activity Section */}
-      <div>
-        <h2 className="text-xl font-bold text-white mb-4">Recent Activity</h2>
-
-        {!activity?.recent || activity.recent.length === 0 ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
-            <p className="text-slate-400">No runs yet — history appears after the first watering</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800">
-                  <th className="px-4 py-3 text-left text-slate-300 font-medium">Time</th>
-                  <th className="px-4 py-3 text-left text-slate-300 font-medium">Zone / Relay</th>
-                  <th className="px-4 py-3 text-left text-slate-300 font-medium">Trigger</th>
-                  <th className="px-4 py-3 text-left text-slate-300 font-medium">Outcome</th>
-                  <th className="px-4 py-3 text-left text-slate-300 font-medium">Runtime (min)</th>
-                  <th className="px-4 py-3 text-left text-slate-300 font-medium">Gallons</th>
-                  <th className="px-4 py-3 text-left text-slate-300 font-medium">Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activity.recent.map((item, idx) => (
-                  <tr key={idx} className="border-b border-slate-800 hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">
-                      {formatLocalTime(item.timestamp)}
-                    </td>
-                    <td className="px-4 py-3 text-white">
-                      {item.zone_id || `Relay ${item.relay_channel}`}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 text-xs">{item.trigger_type}</td>
-                    <td className="px-4 py-3">
+          groups.map((group) => (
+            <div key={group.label} className="flex flex-col">
+              <span className="py-2 font-mono text-[11px] text-fern">— {group.label} —</span>
+              {group.items.map((item, idx) => (
+                <div key={idx} className="flex gap-3 border-t border-hairline py-3">
+                  <span className="min-w-[52px] pt-0.5 font-mono text-[11px] text-fern">
+                    {ledgerTime(item.timestamp)}
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span
-                        className={`px-2 py-1 rounded text-xs font-medium border ${getOutcomeBadgeColor(
-                          item.outcome
-                        )}`}
-                      >
-                        {item.outcome}
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: outcomeDot(item) }}
+                      />
+                      <span className="text-[14px] font-bold text-ink">
+                        {entryTitle(item, nameFor(item))}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">
-                      {item.actual_runtime_min !== null ? item.actual_runtime_min.toFixed(1) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">
-                      {item.gallons_estimated_delivered != null ? Number(item.gallons_estimated_delivered).toFixed(1) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 font-mono text-xs max-w-xs truncate">
-                      {item.reason}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      {item.outcome === "RAN" && (
+                        <span className="font-mono text-[11px] text-sec">
+                          {item.actual_runtime_min != null
+                            ? `${Math.round(item.actual_runtime_min)}m · `
+                            : ""}
+                          {Number(item.gallons_estimated_delivered || 0).toFixed(1)} gal
+                        </span>
+                      )}
+                    </div>
+                    {item.reason && (
+                      <span className="text-[12px] leading-normal text-fern">{item.reason}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))
         )}
       </div>
     </div>

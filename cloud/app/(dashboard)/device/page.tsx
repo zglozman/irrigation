@@ -1,4 +1,4 @@
-// Device page - WiFi setup and board status
+// The box — board status and backup WiFi setup
 
 "use client";
 
@@ -28,45 +28,71 @@ interface FirmwareInfo {
   [key: string]: any;
 }
 
-function RelayBoardIcon(): React.ReactNode {
+function BoardIcon({ awake }: { awake: boolean }) {
   return (
-    <svg width="120" height="80" viewBox="0 0 120 80" className="text-current">
-      {/* Board chassis */}
-      <rect x="10" y="10" width="100" height="60" rx="4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-
-      {/* Relay blocks (8 relays shown) */}
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-        <g key={i}>
-          <rect x={18 + i * 11} y="20" width="9" height="20" rx="1" fill="none" stroke="currentColor" strokeWidth="1" />
-          <circle cx={22.5 + i * 11} cy="32" r="1.5" fill="currentColor" />
-        </g>
-      ))}
-
-      {/* Status LED (pulsing dot indicator area) */}
-      <circle cx="105" cy="18" r="3" fill="none" stroke="currentColor" strokeWidth="1" />
+    <svg
+      width="72"
+      height="48"
+      viewBox="0 0 96 64"
+      fill="none"
+      stroke="#2f8f4e"
+      strokeWidth="1.6"
+      aria-hidden="true"
+    >
+      <rect x="2" y="4" width="92" height="56" rx="5" />
+      <rect x="10" y="14" width="10" height="14" rx="1.5" />
+      <rect x="24" y="14" width="10" height="14" rx="1.5" />
+      <rect x="38" y="14" width="10" height="14" rx="1.5" />
+      <rect x="52" y="14" width="10" height="14" rx="1.5" />
+      <rect x="66" y="14" width="10" height="14" rx="1.5" />
+      <rect x="10" y="38" width="24" height="14" rx="2" />
+      <circle cx="84" cy="46" r="3.5" fill={awake ? "#57b46f" : "#d26743"} stroke="none" />
     </svg>
   );
 }
 
-function SignalBars({ rssi }: { rssi: number }): React.ReactNode {
-  let bars = 1;
-  if (rssi >= -55) bars = 4;
-  else if (rssi >= -65) bars = 3;
-  else if (rssi >= -75) bars = 2;
-
+function WifiIcon({ strong, active }: { strong: boolean; active: boolean }) {
   return (
-    <div className="flex items-center gap-0.5">
-      {Array.from({ length: 4 }, (_, i) => (
-        <div
-          key={i}
-          className={`w-0.5 rounded-sm transition-colors ${
-            i < bars ? "bg-teal-400" : "bg-slate-700"
-          }`}
-          style={{ height: `${(i + 1) * 3}px` }}
-        />
-      ))}
-    </div>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={active ? "#2f8f4e" : "#79907e"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12.5a10 10 0 0 1 14 0" />
+      <path d="M8.5 16a5 5 0 0 1 7 0" />
+      <path d="M12 19.5h.01" />
+      {strong && <path d="M2 9a15 15 0 0 1 20 0" />}
+    </svg>
   );
+}
+
+function LockIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#79907e"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
+// strength words instead of dBm
+function strengthWord(rssi: number): "strong" | "good" | "weak" {
+  if (rssi >= -60) return "strong";
+  if (rssi >= -70) return "good";
+  return "weak";
 }
 
 function formatRelativeTime(isoString: string | null): { relative: string; absolute: string } {
@@ -205,7 +231,7 @@ export default function DevicePage() {
       if (!response.ok) throw new Error("Failed to configure WiFi");
 
       setConfigMessage(
-        "Credentials sent — the board saves them and will use WiFi whenever Ethernet is unplugged."
+        "Credentials sent — the box saves them and will use WiFi whenever Ethernet is unplugged."
       );
       setPassword("");
       setSelectedNetwork(null);
@@ -223,186 +249,181 @@ export default function DevicePage() {
   };
 
   const isOnline = boardStatus.state === "online";
-  const { relative: statusRelative, absolute: statusAbsolute } = formatRelativeTime(boardStatus.since);
+  const { relative: statusRelative, absolute: statusAbsolute } = formatRelativeTime(
+    boardStatus.since
+  );
 
   return (
-    <div className="p-8">
+    <div className="mx-auto max-w-[720px] px-5 pb-8 md:px-12">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Device</h1>
-        <p className="text-slate-400">Board status and WiFi setup</p>
+      <div className="flex items-baseline justify-between pb-3.5 pt-6 md:pt-8">
+        <h1 className="font-display text-[27px] font-bold leading-tight tracking-[-0.02em] text-ink">
+          the box
+        </h1>
+        <span className="font-mono text-[11px] text-fern">out by the spigot</span>
       </div>
 
-      {/* Board Identity Card */}
-      <div className="mb-6 p-6 bg-slate-900 border border-slate-800 rounded-lg">
-        <div className="flex items-start gap-6 mb-6">
-          {/* Board Icon */}
-          <div className="text-slate-400 flex-shrink-0">
-            <RelayBoardIcon />
+      {/* Board card */}
+      <div className="card flex flex-col gap-3.5 border border-inputb p-4">
+        <div className="flex items-center gap-3.5">
+          <BoardIcon awake={isOnline} />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 className="font-display text-[17px] font-semibold tracking-[-0.01em] text-ink">
+              KinCony KC868-E16P
+            </h2>
+            <span className="font-mono text-[11px] text-fern">
+              irrigation-controller
+              {firmwareInfo?.version ? ` · v${firmwareInfo.version}` : ""}
+            </span>
           </div>
+        </div>
 
-          {/* Board Info */}
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold text-white mb-1">KinCony KC868-E16P</h2>
-            <div className="font-mono text-sm text-slate-400 mb-4">irrigation-controller</div>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="flex items-center gap-2">
+            <span
+              className={`h-[9px] w-[9px] rounded-full ${
+                isOnline ? "animate-pulse bg-leaflight" : "bg-clay"
+              }`}
+            />
+            <span className={`text-[13px] font-bold ${isOnline ? "text-leaf" : "text-clay"}`}>
+              {loading ? "…" : isOnline ? "Awake" : "Asleep"}
+            </span>
+          </span>
+          <span className="text-[12px] text-fern">
+            · {isOnline ? "on the wire since" : "last seen"} {statusRelative}
+          </span>
+          {statusAbsolute && (
+            <span className="w-full font-mono text-[11px] text-stone">{statusAbsolute}</span>
+          )}
+        </div>
 
-            {/* Status Line */}
-            <div className="flex items-start gap-3 mb-6">
-              <div
-                className={`w-3 h-3 rounded-full flex-shrink-0 mt-0.5 ${
-                  isOnline ? "bg-teal-500 animate-pulse" : "bg-red-500"
-                }`}
-              />
-              <div>
-                <div className="font-medium text-white">
-                  {isOnline ? "Online" : "Offline"} — {isOnline ? "connected since" : "last seen"}{" "}
-                  <span className="text-teal-400">{statusRelative}</span>
-                </div>
-                {statusAbsolute && (
-                  <div className="text-xs font-mono text-slate-500 mt-1">{statusAbsolute}</div>
-                )}
-              </div>
-            </div>
-
-            {/* Details Grid */}
-            {wifiStatus && (
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                {wifiStatus.active && (
-                  <div>
-                    <div className="text-slate-400">Active Interface</div>
-                    <div className="text-white font-medium capitalize">{wifiStatus.active}</div>
-                  </div>
-                )}
-
-                {wifiStatus.ip && (
-                  <div>
-                    <div className="text-slate-400">IP Address</div>
-                    <div className="text-white font-mono">{wifiStatus.ip}</div>
-                  </div>
-                )}
-
-                {wifiStatus.ssid && (
-                  <div>
-                    <div className="text-slate-400">WiFi SSID</div>
-                    <div className="text-white font-medium">{wifiStatus.ssid}</div>
-                  </div>
-                )}
-
-                {wifiStatus.configured && (
-                  <div>
-                    <div className="text-slate-400">Configured SSID</div>
-                    <div className="text-white font-medium">{wifiStatus.configured}</div>
-                  </div>
-                )}
-
-                {firmwareInfo && (
-                  <div>
-                    <div className="text-slate-400">Firmware Version</div>
-                    <div className="text-white font-mono">
-                      {firmwareInfo.version || "—"}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="flex flex-col gap-0.5 rounded-[10px] bg-page px-3 py-2.5">
+            <span className="text-[11px] text-fern">Connection</span>
+            <span className="text-[13px] font-bold text-ink">
+              {wifiStatus?.active === "ethernet"
+                ? "Ethernet (PoE)"
+                : wifiStatus?.active === "wifi"
+                  ? `WiFi${wifiStatus.ssid ? ` (${wifiStatus.ssid})` : ""}`
+                  : "—"}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5 rounded-[10px] bg-page px-3 py-2.5">
+            <span className="text-[11px] text-fern">Address</span>
+            <span className="font-mono text-[13px] text-ink">{wifiStatus?.ip || "—"}</span>
           </div>
         </div>
       </div>
 
-      {/* WiFi Setup Card */}
-      <div className="p-6 bg-slate-900 border border-slate-800 rounded-lg">
-        <h2 className="text-lg font-semibold text-white mb-4">WiFi Setup</h2>
-
-        <p className="text-sm text-slate-400 mb-6">
-          WiFi setup requires the board to be currently online (via Ethernet).
-        </p>
-
-        {/* Scan Button */}
-        <button
-          onClick={handleScan}
-          disabled={scanning || !isOnline}
-          className={`w-full px-4 py-2 rounded-lg font-medium transition-colors mb-6 ${
-            isOnline
-              ? "bg-teal-600 hover:bg-teal-700 text-white"
-              : "bg-slate-700 text-slate-500 cursor-not-allowed"
-          }`}
-        >
-          {scanning ? "Scanning..." : "Scan for Networks"}
-        </button>
+      {/* Backup WiFi */}
+      <div className="card mt-3.5 flex flex-col gap-3 border border-inputb p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col">
+            <h2 className="font-display text-[16px] font-semibold tracking-[-0.01em] text-ink">
+              Backup WiFi
+            </h2>
+            {wifiStatus?.configured ? (
+              <span className="text-[11px] font-bold text-leaf">
+                saved: {wifiStatus.configured}
+              </span>
+            ) : (
+              <span className="text-[11px] text-warn">not set up yet</span>
+            )}
+          </div>
+          <button
+            onClick={handleScan}
+            disabled={scanning || !isOnline}
+            className="pill pill-soft h-11 shrink-0 border border-[#cfe0cf] px-4 text-[13px]"
+          >
+            {scanning ? "listening…" : "look for networks"}
+          </button>
+        </div>
 
         {scanError && (
-          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-sm">
-            {scanError}
+          <div className="rounded-[10px] bg-claytint p-3 text-[12px] text-clay">{scanError}</div>
+        )}
+
+        {/* Networks list */}
+        {networks.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {networks.map((network) => {
+              const selected = selectedNetwork === network.ssid;
+              return (
+                <div key={network.ssid} className="flex flex-col gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedNetwork(selected ? null : network.ssid);
+                      setPassword("");
+                      setConfigMessage("");
+                      setConfigError("");
+                    }}
+                    className={`press flex min-h-[48px] items-center gap-3 rounded-[10px] border px-3.5 py-3 text-left ${
+                      selected
+                        ? "border-[#cfe0cf] bg-tint"
+                        : "border-hairline bg-page hover:bg-track"
+                    }`}
+                  >
+                    <WifiIcon strong={strengthWord(network.rssi) === "strong"} active={selected} />
+                    <span
+                      className={`min-w-0 flex-1 truncate text-[14px] font-bold ${
+                        selected ? "text-ink" : "text-sec"
+                      }`}
+                    >
+                      {network.ssid}
+                    </span>
+                    <span className="font-mono text-[11px] text-fern">
+                      {strengthWord(network.rssi)}
+                    </span>
+                    {network.secured && <LockIcon />}
+                  </button>
+
+                  {/* Password input */}
+                  {selected && (
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="password"
+                        placeholder={`Password for ${network.ssid}`}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={configuring}
+                        className="h-12 w-full rounded-[10px] border border-inputb bg-page px-3.5 text-[14px] text-ink placeholder:text-stone focus:outline-none focus:ring-2 focus:ring-leaflight disabled:opacity-50"
+                      />
+                      <button
+                        onClick={() => handleConnect(network)}
+                        disabled={configuring || !password}
+                        className="pill pill-primary h-12 w-full text-[14px]"
+                      >
+                        {configuring ? "sending it out…" : "save to the box"}
+                      </button>
+                      {configError && (
+                        <div className="text-[12px] text-clay">{configError}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Networks List */}
-        {networks.length > 0 && (
-          <div className="mb-6 space-y-2">
-            {networks.map((network) => (
-              <div key={network.ssid}>
-                <button
-                  onClick={() => {
-                    setSelectedNetwork(
-                      selectedNetwork === network.ssid ? null : network.ssid
-                    );
-                    setPassword("");
-                    setConfigMessage("");
-                    setConfigError("");
-                  }}
-                  className="w-full p-3 bg-slate-800 hover:bg-slate-700 rounded-lg flex items-center justify-between transition-colors text-left"
-                >
-                  <div className="flex-1">
-                    <div className="font-medium text-white flex items-center gap-2">
-                      {network.ssid}
-                      {network.secured && <span>🔒</span>}
-                    </div>
-                    <div className="text-xs text-slate-400">{network.rssi} dBm</div>
-                  </div>
-                  <SignalBars rssi={network.rssi} />
-                </button>
-
-                {/* Password Input */}
-                {selectedNetwork === network.ssid && (
-                  <div className="mt-2 p-3 bg-slate-800 rounded-lg space-y-2">
-                    <input
-                      type="password"
-                      placeholder="Enter password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      disabled={configuring}
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500 disabled:opacity-50"
-                    />
-
-                    <button
-                      onClick={() => handleConnect(network)}
-                      disabled={configuring || !password}
-                      className="w-full px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 text-white rounded font-medium transition-colors disabled:opacity-50"
-                    >
-                      {configuring ? "Connecting..." : "Connect"}
-                    </button>
-
-                    {configError && (
-                      <div className="text-sm text-red-400">{configError}</div>
-                    )}
-
-                    {configMessage && (
-                      <div className="text-sm text-teal-400">{configMessage}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+        {configMessage && (
+          <div className="rounded-[10px] border border-[#cfe0cf] bg-tint p-3 text-[12px] text-leafdark">
+            {configMessage}
           </div>
         )}
 
         {!scanning && networks.length === 0 && (
-          <div className="text-center py-6 text-slate-400 text-sm">
+          <p className="py-2 text-center text-[12px] text-fern">
             {isOnline
-              ? "Click 'Scan for Networks' to find available WiFi networks"
-              : "Board must be online to scan networks"}
-          </div>
+              ? "tap “look for networks” to find nearby WiFi"
+              : "the box must be awake on Ethernet before it can look for networks"}
+          </p>
         )}
+
+        <span className="text-[11px] leading-normal text-fern">
+          Needs the box awake on Ethernet. Once saved, WiFi takes over on its own whenever the
+          cable is out.
+        </span>
       </div>
     </div>
   );

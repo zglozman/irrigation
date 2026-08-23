@@ -1,9 +1,12 @@
-// Dashboard page - shows all zones with weekly budget progress
+// Garden page — the terraced beds, the dawn watering window, and the
+// day at a glance. Every bed is a soil cross-section that fills as it drinks.
 
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { BedGauge } from "@/components/garden/BedGauge";
+import { DawnArc, DawnArcMark } from "@/components/garden/DawnArc";
 
 interface Zone {
   zone_id: string;
@@ -21,6 +24,9 @@ interface Zone {
   };
   schedule?: {
     status: "PENDING" | "ACTIVE" | "COMPLETED";
+    scheduled_start?: string;
+    scheduled_end?: string;
+    scheduled_runtime_min?: number;
   };
 }
 
@@ -32,15 +38,40 @@ interface Forecast {
   rainSkipLikely: boolean;
 }
 
+interface BoardStatus {
+  state: "online" | "offline" | "unknown";
+  since: string | null;
+}
+
+function formatClock(date: Date): string {
+  let h = date.getHours();
+  const m = date.getMinutes();
+  const suffix = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+const plantEmojis = (zoneType?: string): [string, string] => {
+  if (!zoneType) return ["🌱", "🌿"];
+  if (zoneType.includes("turf")) return ["🌾", "🌾"];
+  if (zoneType.includes("vegetable")) return ["🍅", "🍅"];
+  if (zoneType.includes("shrub")) return ["🪴", "🌿"];
+  if (zoneType.includes("xeric")) return ["🌵", "🌼"];
+  if (zoneType.includes("tree")) return ["🌳", "🍃"];
+  return ["🌱", "🌿"];
+};
+
 export default function DashboardPage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [forecast, setForecast] = useState<Forecast | null>(null);
+  const [board, setBoard] = useState<BoardStatus>({ state: "unknown", since: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     loadZones();
     loadForecast();
+    loadBoard();
   }, []);
 
   const loadZones = async () => {
@@ -70,164 +101,199 @@ export default function DashboardPage() {
     }
   };
 
-  const getProgressPercent = (zone: Zone): number => {
-    const budget = zone.budget;
-    if (!budget || budget.weekly_target_gal === 0) return 0;
+  const loadBoard = async () => {
+    try {
+      const response = await fetch("/api/device/status");
+      if (response.ok) {
+        const data = await response.json();
+        setBoard(data.board || { state: "unknown", since: null });
+      }
+    } catch (err) {
+      console.error("Failed to load board status:", err);
+    }
+  };
 
-    const used = budget.rainfall_gal_this_week + budget.delivered_gal_this_week;
-    return Math.min(100, (used / budget.weekly_target_gal) * 100);
+  const now = new Date();
+  const nowHour = now.getHours() + now.getMinutes() / 60;
+  const dateLine = now
+    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    .toLowerCase()
+    .replace(",", "");
+  const dayName = now.toLocaleDateString("en-US", { weekday: "long" });
+
+  // Drink marks from today's schedules
+  const marks: DawnArcMark[] = zones
+    .filter((z) => z.schedule?.scheduled_start)
+    .map((z) => {
+      const start = new Date(z.schedule!.scheduled_start!);
+      const isToday = start.toDateString() === now.toDateString();
+      return { zone: z, start, isToday };
+    })
+    .filter((m) => m.isToday)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+    .map(({ zone, start }) => ({
+      label: `${zone.name.toLowerCase().split(" ")[0]} ${formatClock(start).replace(" am", "").replace(" pm", "")}`,
+      hour: start.getHours() + start.getMinutes() / 60,
+      color:
+        zone.schedule?.status === "PENDING"
+          ? "#9ec9ef"
+          : "#2f8f4e",
+    }));
+
+  const statusFor = (zone: Zone): { text: string; className: string } => {
+    const budget = zone.budget;
+    const target = budget?.weekly_target_gal || 0;
+    const total = (budget?.delivered_gal_this_week || 0) + (budget?.rainfall_gal_this_week || 0);
+
+    if (zone.schedule?.status === "ACTIVE") {
+      let mins: number | null = null;
+      if (zone.schedule.scheduled_end) {
+        mins = Math.max(0, Math.round((new Date(zone.schedule.scheduled_end).getTime() - Date.now()) / 60000));
+      }
+      return {
+        text: `💧 drinking now${mins != null ? ` · ${mins} min` : ""}`,
+        className: "text-leaf font-bold",
+      };
+    }
+    if (target > 0 && total >= target) {
+      const rained = (budget?.rainfall_gal_this_week || 0) > 0;
+      return {
+        text: rained ? "😌 resting — rain filled this bed" : "😌 resting — full for the week",
+        className: "text-warn",
+      };
+    }
+    if (zone.schedule?.status === "PENDING" && zone.schedule.scheduled_start) {
+      const start = new Date(zone.schedule.scheduled_start);
+      const today = start.toDateString() === now.toDateString();
+      const tomorrow =
+        start.toDateString() === new Date(now.getTime() + 86400000).toDateString();
+      const day = today ? "today" : tomorrow ? "tomorrow" : start.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+      return { text: `drinks ${day} ${formatClock(start)}`, className: "text-fern" };
+    }
+    return { text: "no drink on the books", className: "text-fern" };
   };
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <p className="text-slate-400">Loading zones...</p>
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-fern">walking the garden…</p>
       </div>
     );
   }
 
-  const getPlantEmoji = (zoneType?: string): string => {
-    if (!zoneType) return "🌱";
-    if (zoneType.includes("turf")) return "🌿";
-    if (zoneType.includes("vegetable")) return "🍅";
-    if (zoneType.includes("shrub")) return "🪴";
-    if (zoneType.includes("xeric")) return "🌵";
-    if (zoneType.includes("tree")) return "🌳";
-    return "🌱";
-  };
-
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Dashboard</h1>
-        <p className="text-slate-400">Monitor your irrigation zones</p>
-      </div>
+    <div className="mx-auto max-w-[980px]">
+      {/* Masthead */}
+      <header className="rounded-b-[28px] bg-gradient-to-br from-[#dff0d8] via-[#cfe8cf] to-[#c3e2cd] px-5 pb-5 pt-6 md:rounded-none md:bg-none md:px-12 md:pb-1 md:pt-8">
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="font-display text-[27px] font-bold leading-tight tracking-[-0.02em] text-ink md:text-[30px]">
+            <span className="md:hidden">sprout</span>
+            <span className="hidden md:inline">{dayName} in the garden</span>
+          </h1>
+          <span className="font-mono text-[11px] text-sec md:text-[12px]">
+            {dateLine} · board {board.state === "online" ? "online" : board.state === "offline" ? "offline" : "…"}
+          </span>
+        </div>
+      </header>
 
-      {/* Weather Strip */}
-      {forecast && (
-        <div className="mb-6 p-4 bg-slate-800 border border-slate-700 rounded-lg">
-          <div className="flex items-center gap-4">
-            <span className="text-3xl">{forecast.emoji}</span>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-white">
-                {forecast.maxTemp}°F high, {forecast.minTemp}°F low
-              </p>
-              <p className="text-xs text-slate-400">
-                {forecast.rainProbPercent}% chance of rain
-                {forecast.rainSkipLikely && (
-                  <span className="ml-2 text-teal-400">— Sprout may skip watering</span>
-                )}
-              </p>
+      {/* Dawn watering window */}
+      <section className="px-5 pt-3 md:px-12">
+        <div className="md:flex md:items-end md:gap-8">
+          <div className="md:max-w-[560px] md:flex-1">
+            <DawnArc marks={marks} nowHour={nowHour} />
+          </div>
+          <div className="flex flex-col gap-2 md:pb-2">
+            <span className="mt-0.5 text-[12px] text-sec md:text-[13px]">
+              {forecast
+                ? `This morning's watering window. ${forecast.maxTemp}° and ${
+                    forecast.rainProbPercent >= 50
+                      ? "rain coming — some beds may rest"
+                      : "clear — the beds drink at dawn"
+                  }.`
+                : "This morning's watering window."}
+            </span>
+            <div className="flex items-center gap-3.5">
+              <span className="flex items-center gap-1.5">
+                <span className="h-[9px] w-3.5 rounded-[3px] bg-leaf" />
+                <span className="text-[11px] text-sec">watered</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-[9px] w-3.5 rounded-[3px] bg-rain" />
+                <span className="text-[11px] text-sec">rain</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-[11px] w-0.5 [background:repeating-linear-gradient(180deg,#79907e_0_2px,transparent_2px_5px)]" />
+                <span className="text-[11px] text-sec">weekly goal</span>
+              </span>
             </div>
           </div>
         </div>
-      )}
+      </section>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded text-red-400">
+        <div className="mx-5 mt-4 rounded-[16px] bg-claytint p-4 text-sm text-clay md:mx-12">
           {error}
         </div>
       )}
 
-      {zones.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-slate-400 mb-4">No zones configured yet</p>
-          <Link
-            href="/zones"
-            className="inline-block px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded font-medium transition-colors"
-          >
-            Create Zone
-          </Link>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {zones.map((zone) => {
+      {/* Terraced beds */}
+      <section className="flex flex-col gap-3 px-5 pt-4 md:px-12 md:pt-5">
+        {zones.length === 0 && !error ? (
+          <div className="card flex flex-col items-center gap-4 p-8 text-center">
+            <p className="text-sm text-fern">no beds planted yet</p>
+            <Link href="/zones/new" className="pill pill-primary h-11 px-5 text-sm">
+              plant the first bed
+            </Link>
+          </div>
+        ) : (
+          zones.map((zone) => {
             const budget = zone.budget;
-            const percent = getProgressPercent(zone);
             const delivered = budget?.delivered_gal_this_week || 0;
             const rainfall = budget?.rainfall_gal_this_week || 0;
             const target = budget?.weekly_target_gal || 0;
             const isActive = zone.schedule?.status === "ACTIVE";
-            const plantEmoji = getPlantEmoji(zone.plantConfig?.zone_type);
-
-            const rainfallPercent = target > 0 ? (rainfall / target) * 100 : 0;
-            const deliveredPercent = target > 0 ? (delivered / target) * 100 : 0;
+            const [emojiA, emojiB] = plantEmojis(zone.plantConfig?.zone_type);
+            const status = statusFor(zone);
 
             return (
-              <Link
-                key={zone.zone_id}
-                href={`/zones/${zone.zone_id}`}
-                className="group block"
-              >
-                <div className="relative bg-slate-900 border border-slate-800 rounded-lg p-6 hover:border-slate-700 transition-all hover:shadow-lg">
-                  {/* Active Droplet Badge */}
-                  {isActive && (
-                    <div className="absolute -top-3 -right-3 w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center text-lg animate-pulse shadow-lg">
-                      💧
-                    </div>
-                  )}
-
-                  {/* Zone Header with Plant Emoji */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h2 className="text-lg font-bold text-white mb-1 group-hover:text-teal-400 transition-colors">
-                        {zone.name}
-                      </h2>
-                      <p className="text-sm text-slate-400">
-                        {zone.plantConfig?.zone_type || "Unknown type"}
-                      </p>
-                    </div>
-                    <span className="text-3xl">{plantEmoji}</span>
-                  </div>
-
-                  {/* Animated Progress Bar */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-slate-300">
-                        Weekly Budget
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {percent.toFixed(0)}%
-                      </span>
-                    </div>
-
-                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden relative">
-                      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/30 to-teal-500/30 opacity-50" />
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-500 ease-out"
-                        style={{
-                          width: `${Math.min(100, rainfallPercent)}%`,
-                        }}
-                        title="Rainfall"
-                      />
-                      <div
-                        className="absolute top-0 left-0 h-full bg-gradient-to-r from-teal-400 to-teal-500 transition-all duration-500 ease-out"
-                        style={{
-                          width: `${Math.min(100, rainfallPercent + deliveredPercent)}%`,
-                          marginLeft: `${Math.min(100, rainfallPercent)}%`,
-                        }}
-                        title="Irrigation"
-                      />
-                    </div>
-
-                    <div className="flex justify-between mt-2 text-xs text-slate-500">
-                      <span>
-                        {(rainfall + delivered).toFixed(1)} / {target.toFixed(1)} gal
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Quick Actions */}
-                  <div className="flex space-x-2 pt-4 border-t border-slate-800">
-                    <QuickRunButton zoneId={zone.zone_id} />
+              <div key={zone.zone_id} className="card p-4">
+                <div className="flex items-end justify-between gap-2 pb-2">
+                  <Link
+                    href={`/zones/${zone.zone_id}`}
+                    className="press flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 py-1"
+                  >
+                    <span className="font-display text-[19px] font-semibold leading-tight tracking-[-0.01em] text-ink">
+                      {zone.name.toLowerCase()}
+                    </span>
+                    <span className={`text-[12px] ${status.className}`}>{status.text}</span>
+                  </Link>
+                  {isActive ? (
                     <QuickStopButton zoneId={zone.zone_id} />
-                  </div>
+                  ) : (
+                    <QuickRunButton zoneId={zone.zone_id} />
+                  )}
                 </div>
-              </Link>
+
+                <div className="relative mt-2 h-[84px]">
+                  <span className="absolute -top-3.5 left-[18px] z-[2] text-[24px]" aria-hidden="true">
+                    {emojiA}
+                  </span>
+                  <span className="absolute -top-2.5 left-[52px] z-[2] text-[18px]" aria-hidden="true">
+                    {emojiB}
+                  </span>
+                  <BedGauge
+                    deliveredFrac={target > 0 ? delivered / target : 0}
+                    rainFrac={target > 0 ? rainfall / target : 0}
+                  />
+                  <span className="absolute bottom-2 right-3 font-mono text-[11px] text-sec">
+                    {(delivered + rainfall).toFixed(1)}/{target.toFixed(1)} gal
+                  </span>
+                </div>
+              </div>
             );
-          })}
-        </div>
-      )}
+          })
+        )}
+      </section>
     </div>
   );
 }
@@ -261,24 +327,25 @@ function QuickRunButton({ zoneId }: { zoneId: string }) {
 
   if (showInput) {
     return (
-      <form onSubmit={handleRun} className="flex space-x-1 flex-1">
+      <form onSubmit={handleRun} className="flex shrink-0 items-center gap-1.5">
         <input
           type="number"
           min="1"
           max="55"
           value={minutes}
           onChange={(e) => setMinutes(e.target.value)}
-          className="flex-1 px-2 py-1 text-sm bg-slate-800 border border-slate-700 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+          className="h-11 w-16 rounded-full border border-inputb bg-white text-center font-mono text-sm text-ink focus:outline-none focus:ring-2 focus:ring-leaflight"
+          aria-label="minutes to run"
           autoFocus
           onClick={(e) => e.stopPropagation()}
         />
         <button
           type="submit"
           disabled={loading}
-          className="px-2 py-1 text-sm bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 text-white rounded font-medium transition-colors"
+          className="pill pill-primary h-11 px-4 text-[13px]"
           onClick={(e) => e.stopPropagation()}
         >
-          {loading ? "..." : "Go"}
+          {loading ? "…" : "go"}
         </button>
       </form>
     );
@@ -291,9 +358,9 @@ function QuickRunButton({ zoneId }: { zoneId: string }) {
         e.stopPropagation();
         setShowInput(true);
       }}
-      className="flex-1 px-3 py-1 text-sm bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 rounded font-medium transition-colors border border-teal-500/30"
+      className="pill pill-soft h-11 shrink-0 px-[18px] text-[13px]"
     >
-      Run
+      run
     </button>
   );
 }
@@ -319,9 +386,9 @@ function QuickStopButton({ zoneId }: { zoneId: string }) {
     <button
       onClick={handleStop}
       disabled={loading}
-      className="flex-1 px-3 py-1 text-sm bg-red-600/20 hover:bg-red-600/30 text-red-300 rounded font-medium transition-colors border border-red-500/30 disabled:opacity-50"
+      className="pill pill-stop h-11 shrink-0 px-[18px] text-[13px]"
     >
-      {loading ? "..." : "Stop"}
+      {loading ? "…" : "stop"}
     </button>
   );
 }

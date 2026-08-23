@@ -1,29 +1,34 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Sora, Karla, Spline_Sans_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const sora = Sora({
+  variable: "--font-sora",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const karla = Karla({
+  variable: "--font-karla",
+  subsets: ["latin"],
+});
+
+const splineSansMono = Spline_Sans_Mono({
+  variable: "--font-spline-mono",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Irrigation",
-  description: "Smart personal irrigation control",
+  title: "sprout",
+  description: "your garden, watered wisely",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${sora.variable} ${karla.variable} ${splineSansMono.variable} h-full antialiased`}
     >
-      <body className="bg-slate-950 text-slate-100 min-h-full flex flex-col">
+      <body className="bg-page text-ink min-h-full flex flex-col">
         {children}
       </body>
     </html>

@@ -40,47 +40,52 @@ export default function InviteForm() {
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
-      <h2 className="text-lg font-bold text-white">Invite User</h2>
-      <p className="text-sm text-slate-400">Invite another user to access this system</p>
+    <div className="card flex flex-col gap-3.5 p-4">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="font-display text-[16px] font-semibold tracking-[-0.01em] text-ink">
+          Open the gate
+        </h2>
+        <p className="text-[12px] text-fern">invite someone else into the garden</p>
+      </div>
 
       {inviteError && (
-        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-sm">
-          {inviteError}
-        </div>
+        <div className="rounded-[10px] bg-claytint p-3 text-[12px] text-clay">{inviteError}</div>
       )}
 
       {inviteSuccess && (
-        <div className="p-3 bg-green-500/10 border border-green-500/30 rounded text-green-400 text-sm">
+        <div className="rounded-[10px] border border-inputb bg-tint p-3 text-[12px] text-leafdark">
           {inviteSuccess}
         </div>
       )}
 
-      <form onSubmit={handleInvite} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-200 mb-2">Email Address</label>
+      <form onSubmit={handleInvite} className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-bold text-sec" htmlFor="invite-email">
+            Email address
+          </label>
           <input
+            id="invite-email"
             type="email"
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
             placeholder="user@example.com"
             required
-            className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            className="h-[46px] w-full rounded-[10px] border border-inputb bg-white px-3.5 text-[14px] text-ink placeholder:text-stone focus:outline-none focus:ring-2 focus:ring-leaflight"
           />
         </div>
 
         <button
           type="submit"
           disabled={inviting}
-          className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 text-white font-medium rounded transition-colors"
+          className="pill pill-primary h-12 w-full text-[14px]"
         >
-          {inviting ? "Sending invite..." : "Send Invite"}
+          {inviting ? "sending it out…" : "send an invite"}
         </button>
       </form>
 
-      <p className="text-xs text-slate-500 pt-2">
-        The invited user will receive an email with a temporary password and a link to set their own
-        password.
+      <p className="text-[11px] leading-normal text-fern">
+        The invited user will receive an email with a temporary password and a link to set their
+        own password.
       </p>
     </div>
   );

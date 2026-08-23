@@ -1,10 +1,11 @@
-// Zone detail/editor page
+// Bed editor — what grows here, how it drinks, and its journal entries.
 
 "use client";
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getZoneTypes } from "@/domain/water-need-calculator";
+import { BedGauge } from "@/components/garden/BedGauge";
 
 interface HistoryItem {
   timestamp: string;
@@ -18,32 +19,63 @@ interface HistoryItem {
   reason: string;
 }
 
-function getOutcomeBadgeColor(outcome: string) {
-  switch (outcome) {
+function outcomeDot(item: HistoryItem): string {
+  if (/watchdog/i.test(item.trigger_type) || /watchdog/i.test(item.reason)) return "#d26743";
+  switch (item.outcome) {
     case "RAN":
-      return "bg-green-500/20 text-green-300 border-green-500/30";
-    case "SKIPPED":
-      return "bg-slate-500/20 text-slate-300 border-slate-500/30";
-    case "SCHEDULED":
-      return "bg-sky-500/20 text-sky-300 border-sky-500/30";
-    case "DELAYED":
-      return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+      return "#2f8f4e";
     case "REDUCED":
-      return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+      return "#9ec9ef";
     case "FAILED":
-      return "bg-red-500/20 text-red-300 border-red-500/30";
+      return "#d26743";
     default:
-      return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+      return "#b7c4b3";
   }
 }
 
-function formatLocalTime(iso: string): string {
+function historyTitle(item: HistoryItem): string {
+  if (/watchdog/i.test(item.trigger_type) || /watchdog/i.test(item.reason)) {
+    return "closed by the watchdog";
+  }
+  switch (item.outcome) {
+    case "RAN":
+      return item.trigger_type === "MANUAL" ? "hand-watered" : "watered";
+    case "SKIPPED":
+      return "rested";
+    case "REDUCED":
+      return item.actual_runtime_min != null
+        ? `trimmed to ${Math.round(item.actual_runtime_min)} min`
+        : "trimmed";
+    case "DELAYED":
+      return "held for later";
+    case "SCHEDULED":
+      return "penciled in";
+    case "FAILED":
+      return "didn't water";
+    default:
+      return item.outcome.toLowerCase();
+  }
+}
+
+function ledgerDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleString();
+    return new Date(iso)
+      .toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      .toLowerCase();
   } catch {
     return iso;
   }
 }
+
+const plantEmojis = (zoneType?: string): [string, string] => {
+  if (!zoneType) return ["🌱", "🌿"];
+  if (zoneType.includes("turf")) return ["🌾", "🌾"];
+  if (zoneType.includes("vegetable")) return ["🍅", "🍅"];
+  if (zoneType.includes("shrub")) return ["🪴", "🌿"];
+  if (zoneType.includes("xeric")) return ["🌵", "🌼"];
+  if (zoneType.includes("tree")) return ["🌳", "🍃"];
+  return ["🌱", "🌿"];
+};
 
 interface Zone {
   zone_id: string;
@@ -72,6 +104,11 @@ interface Zone {
 }
 
 const zoneTypes = getZoneTypes();
+
+const fieldLabel = "text-[11px] text-fern";
+const fieldInput =
+  "h-[46px] w-full rounded-[10px] border border-inputb bg-white px-3.5 text-[14px] text-ink placeholder:text-stone focus:outline-none focus:ring-2 focus:ring-leaflight";
+const fieldInputMono = `${fieldInput} font-mono text-[15px]`;
 
 export default function ZoneDetailPage() {
   const router = useRouter();
@@ -196,7 +233,7 @@ export default function ZoneDetailPage() {
         throw new Error(data.error || "Failed to save zone");
       }
 
-      setSuccess(isNew ? "Zone created!" : "Zone updated!");
+      setSuccess(isNew ? "Bed planted!" : "Bed saved!");
       if (isNew) {
         setTimeout(() => router.push("/zones"), 1500);
       }
@@ -245,325 +282,371 @@ export default function ZoneDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <p className="text-slate-400">Loading...</p>
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-fern">walking to the bed…</p>
       </div>
     );
   }
 
+  const budget = zone?.budget;
+  const target = budget?.weekly_target_gal || 0;
+  const delivered = budget?.delivered_gal_this_week || 0;
+  const rainfall = budget?.rainfall_gal_this_week || 0;
+  const [emojiA, emojiB] = plantEmojis(formData.plantConfig.zone_type);
+
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">
-          {isNew ? "New Zone" : formData.name}
-        </h1>
-        <p className="text-slate-400">
-          {isNew ? "Create a new irrigation zone" : "Edit zone settings"}
-        </p>
+    <div className="mx-auto max-w-[720px] px-5 pb-8 md:px-12">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 pt-6 md:pt-8">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          aria-label="back to the beds"
+          className="press -ml-2.5 flex h-11 w-11 items-center justify-center rounded-full text-fern hover:bg-tint hover:text-sec"
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m15 6-6 6 6 6" />
+          </svg>
+        </button>
+        <div className="flex min-w-0 flex-col">
+          <h1 className="truncate font-display text-[24px] font-bold leading-tight tracking-[-0.02em] text-ink">
+            {isNew ? "new bed" : formData.name.toLowerCase()}
+          </h1>
+          <span className="font-mono text-[11px] text-fern">
+            {isNew
+              ? "plant something"
+              : `valve ${formData.relay_channel} · ${formData.plantConfig.zone_type} bed`}
+          </span>
+        </div>
       </div>
 
-      {error && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded text-red-400">
-          {error}
+      {/* This bed, live */}
+      {!isNew && budget && (
+        <div className="relative mt-6 h-[84px]">
+          <span className="absolute -top-3.5 left-[18px] z-[2] text-[24px]" aria-hidden="true">
+            {emojiA}
+          </span>
+          <span className="absolute -top-2.5 left-[52px] z-[2] text-[18px]" aria-hidden="true">
+            {emojiB}
+          </span>
+          <BedGauge
+            deliveredFrac={target > 0 ? delivered / target : 0}
+            rainFrac={target > 0 ? rainfall / target : 0}
+          />
+          <span className="absolute bottom-2 right-3 font-mono text-[11px] text-sec">
+            {(delivered + rainfall).toFixed(1)}/{target.toFixed(1)} gal this week
+          </span>
         </div>
       )}
 
+      {error && (
+        <div className="mt-4 rounded-[12px] bg-claytint p-3.5 text-sm text-clay">{error}</div>
+      )}
       {success && (
-        <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded text-green-400">
+        <div className="mt-4 rounded-[12px] border border-inputb bg-tint p-3.5 text-sm text-leafdark">
           {success}
         </div>
       )}
 
-      <form onSubmit={handleSave} className="max-w-2xl space-y-8">
-        {/* Zone Info */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
-          <h2 className="text-lg font-bold text-white">Zone Information</h2>
+      {/* What grows here */}
+      <form onSubmit={handleSave} className="flex flex-col gap-2.5 pt-5">
+        <h2 className="font-display text-[16px] font-semibold tracking-[-0.01em] text-sec">
+          What grows here
+        </h2>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-2">
-                Zone Name
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => updateField("name", e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-2">
-                Relay Channel
-              </label>
-              <select
-                value={formData.relay_channel}
-                onChange={(e) => updateField("relay_channel", parseInt(e.target.value))}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                {Array.from({ length: 16 }, (_, i) => i + 1).map((ch) => (
-                  <option key={ch} value={ch}>
-                    Relay {ch}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-2">
-                Area (sq ft)
-              </label>
-              <input
-                type="number"
-                min="1"
-                step="0.1"
-                value={formData.area_sqft}
-                onChange={(e) => updateField("area_sqft", parseFloat(e.target.value))}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-2">
-                Location (optional)
-              </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => updateField("location", e.target.value)}
-                placeholder="Front yard, Back patio, etc."
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Plant Config */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
-          <h2 className="text-lg font-bold text-white">Plant & Irrigation</h2>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-2">
-                Zone Type
-              </label>
-              <select
-                value={formData.plantConfig.zone_type}
-                onChange={(e) => updateField("plantConfig.zone_type", e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                {zoneTypes.map((zt) => (
-                  <option key={zt.value} value={zt.value}>
-                    {zt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-2">
-                Irrigation Method
-              </label>
-              <select
-                value={formData.plantConfig.irrigation_method}
-                onChange={(e) => updateField("plantConfig.irrigation_method", e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="drip">Drip</option>
-                <option value="spray">Spray</option>
-                <option value="soaker">Soaker</option>
-              </select>
-            </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="col-span-2 flex flex-col gap-[5px]">
+            <label className={fieldLabel} htmlFor="bed-name">
+              Bed name
+            </label>
+            <input
+              id="bed-name"
+              type="text"
+              value={formData.name}
+              onChange={(e) => updateField("name", e.target.value)}
+              className={fieldInput}
+              required
+            />
           </div>
 
-          {/* Method-specific fields */}
+          <div className="flex flex-col gap-[5px]">
+            <label className={fieldLabel} htmlFor="bed-valve">
+              Valve
+            </label>
+            <select
+              id="bed-valve"
+              value={formData.relay_channel}
+              onChange={(e) => updateField("relay_channel", parseInt(e.target.value))}
+              className={fieldInput}
+            >
+              {Array.from({ length: 16 }, (_, i) => i + 1).map((ch) => (
+                <option key={ch} value={ch}>
+                  valve {ch}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-[5px]">
+            <label className={fieldLabel} htmlFor="bed-size">
+              Bed size (sq ft)
+            </label>
+            <input
+              id="bed-size"
+              type="number"
+              min="1"
+              step="0.1"
+              value={formData.area_sqft}
+              onChange={(e) => updateField("area_sqft", parseFloat(e.target.value))}
+              className={fieldInputMono}
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-[5px]">
+            <label className={fieldLabel} htmlFor="bed-planting">
+              Planting
+            </label>
+            <select
+              id="bed-planting"
+              value={formData.plantConfig.zone_type}
+              onChange={(e) => updateField("plantConfig.zone_type", e.target.value)}
+              className={fieldInput}
+            >
+              {zoneTypes.map((zt) => (
+                <option key={zt.value} value={zt.value}>
+                  {zt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-[5px]">
+            <label className={fieldLabel} htmlFor="bed-method">
+              Watered by
+            </label>
+            <select
+              id="bed-method"
+              value={formData.plantConfig.irrigation_method}
+              onChange={(e) => updateField("plantConfig.irrigation_method", e.target.value)}
+              className={fieldInput}
+            >
+              <option value="drip">Drip line</option>
+              <option value="spray">Spray heads</option>
+              <option value="soaker">Soaker hose</option>
+            </select>
+          </div>
+
           {formData.plantConfig.irrigation_method === "drip" && (
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-700">
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">
-                  Emitter Count
+            <>
+              <div className="flex flex-col gap-[5px]">
+                <label className={fieldLabel} htmlFor="bed-emitters">
+                  Emitters
                 </label>
                 <input
+                  id="bed-emitters"
                   type="number"
                   min="1"
                   value={formData.plantConfig.emitter_count}
-                  onChange={(e) => updateField("plantConfig.emitter_count", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) =>
+                    updateField("plantConfig.emitter_count", parseInt(e.target.value))
+                  }
+                  className={fieldInputMono}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">
-                  GPH per Emitter
+              <div className="flex flex-col gap-[5px]">
+                <label className={fieldLabel} htmlFor="bed-emitter-gph">
+                  gph per emitter
                 </label>
                 <input
+                  id="bed-emitter-gph"
                   type="number"
                   min="0.1"
                   step="0.1"
                   value={formData.plantConfig.emitter_gph}
-                  onChange={(e) => updateField("plantConfig.emitter_gph", parseFloat(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) =>
+                    updateField("plantConfig.emitter_gph", parseFloat(e.target.value))
+                  }
+                  className={fieldInputMono}
                 />
               </div>
-            </div>
+            </>
           )}
 
           {formData.plantConfig.irrigation_method === "spray" && (
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-700">
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">
-                  Spray Head Count
+            <>
+              <div className="flex flex-col gap-[5px]">
+                <label className={fieldLabel} htmlFor="bed-heads">
+                  Spray heads
                 </label>
                 <input
+                  id="bed-heads"
                   type="number"
                   min="1"
                   value={formData.plantConfig.head_count}
-                  onChange={(e) => updateField("plantConfig.head_count", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) =>
+                    updateField("plantConfig.head_count", parseInt(e.target.value))
+                  }
+                  className={fieldInputMono}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">
-                  GPM per Head
+              <div className="flex flex-col gap-[5px]">
+                <label className={fieldLabel} htmlFor="bed-head-gpm">
+                  gpm per head
                 </label>
                 <input
+                  id="bed-head-gpm"
                   type="number"
                   min="0.1"
                   step="0.1"
                   value={formData.plantConfig.head_gpm}
-                  onChange={(e) => updateField("plantConfig.head_gpm", parseFloat(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) =>
+                    updateField("plantConfig.head_gpm", parseFloat(e.target.value))
+                  }
+                  className={fieldInputMono}
                 />
               </div>
-            </div>
+            </>
           )}
 
           {formData.plantConfig.irrigation_method === "soaker" && (
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-700">
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">
-                  Soaker Length (ft)
+            <>
+              <div className="flex flex-col gap-[5px]">
+                <label className={fieldLabel} htmlFor="bed-soaker-len">
+                  Soaker length (ft)
                 </label>
                 <input
+                  id="bed-soaker-len"
                   type="number"
                   min="1"
                   value={formData.plantConfig.soaker_length_ft}
-                  onChange={(e) => updateField("plantConfig.soaker_length_ft", parseFloat(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) =>
+                    updateField("plantConfig.soaker_length_ft", parseFloat(e.target.value))
+                  }
+                  className={fieldInputMono}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">
-                  GPH per Foot
+              <div className="flex flex-col gap-[5px]">
+                <label className={fieldLabel} htmlFor="bed-soaker-gph">
+                  gph per foot
                 </label>
                 <input
+                  id="bed-soaker-gph"
                   type="number"
                   min="0.1"
                   step="0.1"
                   value={formData.plantConfig.soaker_gph_per_ft}
-                  onChange={(e) => updateField("plantConfig.soaker_gph_per_ft", parseFloat(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) =>
+                    updateField("plantConfig.soaker_gph_per_ft", parseFloat(e.target.value))
+                  }
+                  className={fieldInputMono}
                 />
               </div>
-            </div>
+            </>
           )}
+
+          <div className="col-span-2 flex flex-col gap-[5px]">
+            <label className={fieldLabel} htmlFor="bed-location">
+              Where it sits (optional)
+            </label>
+            <input
+              id="bed-location"
+              type="text"
+              value={formData.location}
+              onChange={(e) => updateField("location", e.target.value)}
+              placeholder="front yard, back patio…"
+              className={fieldInput}
+            />
+          </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex space-x-4">
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-6 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 text-white font-medium rounded transition-colors"
-          >
-            {saving ? "Saving..." : isNew ? "Create Zone" : "Update Zone"}
-          </button>
+        {/* Weekly thirst */}
+        <div className="flex items-center justify-between rounded-[10px] border border-[#cfe0cf] bg-tint px-3.5 py-3">
+          <span className="text-[12px] text-sec">This bed wants about</span>
+          <span className="font-mono text-[15px] font-medium text-leaf">
+            {calculateWeeklyTarget().toFixed(1)} gal / week
+          </span>
+        </div>
 
+        <button type="submit" disabled={saving} className="pill pill-primary h-[50px] w-full text-[15px]">
+          {saving ? "saving…" : "save this bed"}
+        </button>
+
+        <div className="flex gap-2.5">
           {!isNew && (
             <button
               type="button"
               onClick={handleDelete}
-              className="px-6 py-3 bg-red-600/20 hover:bg-red-600/30 text-red-300 font-medium rounded transition-colors border border-red-500/30"
+              className="pill pill-stop h-11 flex-1 text-[13px]"
             >
-              Delete
+              dig up this bed
             </button>
           )}
-
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded transition-colors"
+            className="pill h-11 flex-1 bg-track text-[13px] text-sec hover:bg-hairline"
           >
-            Cancel
+            never mind
           </button>
         </div>
       </form>
 
-      {/* Run History */}
+      {/* From the journal */}
       {!isNew && (
-        <div className="mt-12">
-          <h2 className="text-xl font-bold text-white mb-4">Run History</h2>
+        <div className="flex flex-col pt-6">
+          <h2 className="pb-1.5 font-display text-[16px] font-semibold tracking-[-0.01em] text-sec">
+            From the journal
+          </h2>
 
           {historyLoading ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
-              <p className="text-slate-400">Loading history...</p>
-            </div>
+            <p className="border-t border-hairline py-4 text-sm text-fern">
+              leafing back through the pages…
+            </p>
           ) : historyError ? (
-            <div className="bg-slate-900 border border-red-500/30 rounded-lg p-8 text-center">
-              <p className="text-red-400">{historyError}</p>
+            <div className="rounded-[12px] bg-claytint p-3.5 text-sm text-clay">
+              {historyError}
             </div>
           ) : history.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
-              <p className="text-slate-400">No runs yet — history appears after the first watering</p>
-            </div>
+            <p className="border-t border-hairline py-4 text-sm text-fern">
+              no entries yet — they appear after the first watering
+            </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800">
-                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Time</th>
-                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Trigger</th>
-                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Outcome</th>
-                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Scheduled (min)</th>
-                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Actual (min)</th>
-                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Gallons</th>
-                    <th className="px-4 py-3 text-left text-slate-300 font-medium">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((item, idx) => (
-                    <tr key={idx} className="border-b border-slate-800 hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 text-slate-400 font-mono text-xs">
-                        {formatLocalTime(item.timestamp)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300 text-xs">{item.trigger_type}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium border ${getOutcomeBadgeColor(
-                            item.outcome
-                          )}`}
-                        >
-                          {item.outcome}
+            history.map((item, idx) => (
+              <div key={idx} className="flex gap-3 border-t border-hairline py-2.5">
+                <span className="min-w-[60px] pt-0.5 font-mono text-[11px] text-fern">
+                  {ledgerDate(item.timestamp)}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ background: outcomeDot(item) }}
+                    />
+                    <span className="text-[13px] font-bold text-ink">{historyTitle(item)}</span>
+                    {item.gallons_estimated_delivered != null &&
+                      item.gallons_estimated_delivered > 0 && (
+                        <span className="font-mono text-[11px] text-sec">
+                          {Number(item.gallons_estimated_delivered).toFixed(1)} gal
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">
-                        {item.scheduled_runtime_min != null ? Number(item.scheduled_runtime_min).toFixed(1) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">
-                        {item.actual_runtime_min != null ? Number(item.actual_runtime_min).toFixed(1) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">
-                        {item.gallons_estimated_delivered != null ? Number(item.gallons_estimated_delivered).toFixed(1) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 font-mono text-xs max-w-xs truncate">
-                        {item.reason}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      )}
+                  </div>
+                  {item.reason && (
+                    <span className="text-[12px] leading-normal text-fern">{item.reason}</span>
+                  )}
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}

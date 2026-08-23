@@ -17,6 +17,9 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
 
 export class IrrigationStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -31,6 +34,24 @@ export class IrrigationStack extends cdk.Stack {
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       mfa: cognito.Mfa.OFF,
     });
+
+    // PreSignUp trigger: federated (Google) sign-ins are invite-only — the
+    // Lambda links a Google identity to an existing invited user or rejects.
+    const preSignUpFn = new lambda.Function(this, 'PreSignUpFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      code: lambda.Code.fromAsset('lambda/presignup'),
+      handler: 'index.handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+    });
+    // Wildcard pool ARN: referencing userPool.userPoolArn here creates a
+    // circular dependency (pool → trigger Lambda → role policy → pool).
+    preSignUpFn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['cognito-idp:ListUsers', 'cognito-idp:AdminLinkProviderForUser'],
+      resources: [`arn:aws:cognito-idp:${this.region}:${this.account}:userpool/*`],
+    }));
+    userPool.addTrigger(cognito.UserPoolOperation.PRE_SIGN_UP, preSignUpFn);
 
     const appClient = userPool.addClient('IrrigationAppClient', {
       authFlows: {
@@ -138,6 +159,53 @@ export class IrrigationStack extends cdk.Stack {
       },
     });
 
+    // Hourly forecast snapshots — one line per forecast hour per pull, so
+    // Athena can track how a prediction evolved (and how wrong it was).
+    new glue.CfnTable(this, 'ForecastSnapshotsTable', {
+      catalogId: this.account,
+      databaseName: glueDatabase.ref,
+      tableInput: {
+        name: 'forecast_snapshots',
+        tableType: 'EXTERNAL_TABLE',
+        parameters: {
+          'projection.enabled': 'true',
+          'projection.year.type': 'integer',
+          'projection.year.range': '2025,2100',
+          'projection.month.type': 'integer',
+          'projection.month.range': '1,12',
+          'projection.month.digits': '2',
+          'projection.day.type': 'integer',
+          'projection.day.range': '1,31',
+          'projection.day.digits': '2',
+          'storage.location.template': `s3://${dataBucket.bucketName}/forecast-snapshots/year=\${year}/month=\${month}/day=\${day}`,
+          'classification': 'json',
+        },
+        storageDescriptor: {
+          columns: [
+            { name: 'pulled_at', type: 'string' },
+            { name: 'forecast_time', type: 'string' },
+            { name: 'lead_hours', type: 'double' },
+            { name: 'temp_f', type: 'double' },
+            { name: 'wind_mph', type: 'double' },
+            { name: 'precip_prob', type: 'double' },
+            { name: 'precip_in', type: 'double' },
+            { name: 'source', type: 'string' },
+          ],
+          location: `s3://${dataBucket.bucketName}/forecast-snapshots/`,
+          inputFormat: 'org.apache.hadoop.mapred.TextInputFormat',
+          outputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
+          serdeInfo: {
+            serializationLibrary: 'org.openx.data.jsonserde.JsonSerDe',
+          },
+        },
+        partitionKeys: [
+          { name: 'year', type: 'string' },
+          { name: 'month', type: 'string' },
+          { name: 'day', type: 'string' },
+        ],
+      },
+    });
+
     // ==================== IoT Core ====================
     const iotThing = new iot.CfnThing(this, 'IrrigationController', {
       thingName: 'irrigation-controller',
@@ -205,7 +273,10 @@ export class IrrigationStack extends cdk.Stack {
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:PutObject'],
-          resources: [`${dataBucket.bucketArn}/irrigation-events/*`],
+          resources: [
+            `${dataBucket.bucketArn}/irrigation-events/*`,
+            `${dataBucket.bucketArn}/forecast-snapshots/*`,
+          ],
         }),
 
         // S3 permissions for athena results in data bucket
@@ -222,7 +293,7 @@ export class IrrigationStack extends cdk.Stack {
           resources: [dataBucket.bucketArn],
           conditions: {
             StringLike: {
-              's3:prefix': ['athena-results/*', 'irrigation-events/*'],
+              's3:prefix': ['athena-results/*', 'irrigation-events/*', 'forecast-snapshots/*'],
             },
           },
         }),
@@ -234,11 +305,14 @@ export class IrrigationStack extends cdk.Stack {
           resources: [dataBucket.bucketArn],
         }),
 
-        // S3 GetObject for Athena to read irrigation events
+        // S3 GetObject for Athena to read irrigation events and forecast snapshots
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:GetObject'],
-          resources: [`${dataBucket.bucketArn}/irrigation-events/*`],
+          resources: [
+            `${dataBucket.bucketArn}/irrigation-events/*`,
+            `${dataBucket.bucketArn}/forecast-snapshots/*`,
+          ],
         }),
 
         // S3 permissions for firmware bucket
@@ -267,6 +341,7 @@ export class IrrigationStack extends cdk.Stack {
             `arn:aws:glue:${this.region}:${this.account}:catalog`,
             `arn:aws:glue:${this.region}:${this.account}:database/irrigation`,
             `arn:aws:glue:${this.region}:${this.account}:table/irrigation/irrigation_events`,
+            `arn:aws:glue:${this.region}:${this.account}:table/irrigation/forecast_snapshots`,
           ],
         }),
 
@@ -374,6 +449,8 @@ export class IrrigationStack extends cdk.Stack {
         COGNITO_CLIENT_ID: appClient.userPoolClientId,
         IOT_TOPIC_PREFIX: 'irrigation-controller',
         CHAT_MODEL: 'anthropic.claude-opus-5',
+        COGNITO_DOMAIN: 'sprout-irrigation.auth.us-east-1.amazoncognito.com',
+        APP_URL: 'https://app.sprout-me.com',
         LATITUDE: '29.803436',
         LONGITUDE: '-82.320328',
         TIMEZONE: 'America/New_York',
@@ -429,8 +506,25 @@ export class IrrigationStack extends cdk.Stack {
       deregistrationDelay: cdk.Duration.seconds(10),
     });
 
+    // ==================== Custom domain: app.sprout-me.com ====================
+    // Hosted zone was created by the Route53 domain registration.
+    const zone = route53.HostedZone.fromHostedZoneAttributes(this, 'SproutZone', {
+      hostedZoneId: 'Z08870313FJDVMFI0K5YW',
+      zoneName: 'sprout-me.com',
+    });
+
+    const appDomain = 'app.sprout-me.com';
+
+    // CloudFront requires the certificate in us-east-1 (which this stack is).
+    const certificate = new acm.Certificate(this, 'AppCertificate', {
+      domainName: appDomain,
+      validation: acm.CertificateValidation.fromDns(zone),
+    });
+
     const distribution = new cloudfront.Distribution(this, 'IrrigationDistribution', {
       comment: 'Irrigation dashboard',
+      domainNames: [appDomain],
+      certificate,
       defaultBehavior: {
         origin: new origins.LoadBalancerV2Origin(alb, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
@@ -442,9 +536,21 @@ export class IrrigationStack extends cdk.Stack {
       },
     });
 
+    new route53.ARecord(this, 'AppAliasRecord', {
+      zone,
+      recordName: 'app',
+      target: route53.RecordTarget.fromAlias(new route53targets.CloudFrontTarget(distribution)),
+    });
+
+    new route53.AaaaRecord(this, 'AppAliasRecordV6', {
+      zone,
+      recordName: 'app',
+      target: route53.RecordTarget.fromAlias(new route53targets.CloudFrontTarget(distribution)),
+    });
+
     new cdk.CfnOutput(this, 'AppUrl', {
-      value: `https://${distribution.distributionDomainName}`,
-      description: 'Irrigation dashboard (CloudFront)',
+      value: `https://${appDomain}`,
+      description: 'Irrigation dashboard',
     });
 
     new cdk.CfnOutput(this, 'AlbDnsName', {
