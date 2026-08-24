@@ -147,6 +147,27 @@ async function evaluateZone(params: {
 
     const remainingGal = rainfallOffset.remaining_target_gal;
 
+    // Persist measured rainfall into the budget — the UI's gauges and the
+    // "rained" totals read this record, not the live provider. Skip when the
+    // fetch failed (never clobber a real stored value with an assumed 0),
+    // and skip no-op writes.
+    const rainfallFetchOk = rainfallNote === "";
+    if (
+      rainfallFetchOk &&
+      (Math.abs(rainfallOffset.rain_gal - rainfallGal) > 0.01 ||
+        weekStart !== budget.week_start_date ||
+        deliveredGal !== budget.delivered_gal_this_week)
+    ) {
+      await putBudget(userSub, {
+        zone_id: zone.zone_id,
+        weekly_target_gal: budget.weekly_target_gal,
+        delivered_gal_this_week: deliveredGal,
+        rainfall_gal_this_week: rainfallOffset.rain_gal,
+        week_start_date: weekStart,
+        last_updated: now.toISOString(),
+      });
+    }
+
     // Get current weather snapshot
     let weatherSnapshot = forecast[0] || {};
     const nowLocalHour = getLocalHour(now, config.location.timezone);

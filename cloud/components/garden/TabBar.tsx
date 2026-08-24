@@ -75,7 +75,7 @@ export function TabBar() {
   const [loggingOut, setLoggingOut] = useState(false);
 
   const moreActive =
-    pathname === "/weather" || pathname === "/device" || pathname === "/settings";
+    pathname === "/weather" || pathname === "/device" || pathname === "/settings" || pathname === "/history";
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -129,6 +129,15 @@ export function TabBar() {
           />
           {/* menu scales from its trigger (bottom-right) */}
           <div className="anim-pop absolute bottom-full right-3 z-50 mb-2 flex w-44 flex-col overflow-hidden rounded-[16px] bg-white py-1 [box-shadow:0_8px_28px_#24382a1f]">
+            <Link
+              href="/history"
+              onClick={() => setMoreOpen(false)}
+              className={`press flex h-11 items-center px-4 text-[14px] font-semibold ${
+                pathname === "/history" ? "text-leafdark" : "text-sec"
+              }`}
+            >
+              almanac
+            </Link>
             <Link
               href="/weather"
               onClick={() => setMoreOpen(false)}

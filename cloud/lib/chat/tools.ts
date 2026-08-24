@@ -387,6 +387,24 @@ export const TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: "get_station_history",
+    description: "Get the station's weather history by year or month. Returns daily aggregates, statistics, and monthly rollups.",
+    input_schema: {
+      type: "object",
+      properties: {
+        year: {
+          type: "number",
+          description: "Year to query (2015-2100)",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter the year's results",
+        },
+      },
+      required: ["year"],
+    },
+  },
 ];
 
 /**
@@ -450,6 +468,8 @@ export async function executeTool(
         return await toolGetForecastAccuracy(toolInput.days as number | undefined);
       case "get_weather_comparison":
         return await toolGetWeatherComparison(toolInput.days as number | undefined);
+      case "get_station_history":
+        return await toolGetStationHistory(toolInput.year as number, toolInput.month as number | undefined);
       default:
         return JSON.stringify({ error: `Unknown tool: ${toolName}` });
     }
@@ -1374,6 +1394,40 @@ async function toolGetWeatherComparison(days?: number): Promise<string> {
   } catch (error) {
     return JSON.stringify({
       error: error instanceof Error ? error.message : "Failed to get weather comparison",
+    });
+  }
+}
+
+async function toolGetStationHistory(year?: number, month?: number): Promise<string> {
+  try {
+    const { getYearHistory } = await import("@/lib/station-history");
+
+    if (!year || typeof year !== "number") {
+      return JSON.stringify({ error: "year is required (2015-2100)" });
+    }
+
+    const yearNum = Math.min(Math.max(Math.floor(year), 2015), 2100);
+    const result = await getYearHistory(yearNum);
+
+    // If month is specified, filter to that month's days
+    if (month && month >= 1 && month <= 12) {
+      const monthStr = String(month).padStart(2, "0");
+      const filteredDays = result.days.filter((d) => d.date.includes(`-${monthStr}-`));
+      const filteredMonthly = result.monthly.filter((m) => m.month === month);
+
+      return JSON.stringify({
+        year: result.year,
+        month,
+        days: filteredDays,
+        records: result.records,
+        monthly: filteredMonthly,
+      });
+    }
+
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({
+      error: error instanceof Error ? error.message : "Failed to get station history",
     });
   }
 }

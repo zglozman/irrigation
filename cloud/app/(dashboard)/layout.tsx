@@ -78,6 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <RailLink href="/zones" label="beds" active={pathname.startsWith("/zones")} />
           <RailLink href="/activity" label="journal" active={pathname === "/activity"} />
           <RailLink href="/switches" label="valves" active={pathname === "/switches"} />
+          <RailLink href="/history" label="almanac" active={pathname === "/history"} />
           <RailLink href="/weather" label="weather" active={pathname === "/weather"} />
           <RailLink href="/device" label="the box" active={pathname === "/device"} />
           <RailLink href="/settings" label="settings" active={pathname === "/settings"} />
