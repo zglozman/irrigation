@@ -337,16 +337,18 @@ export async function getDayDetail(date: string): Promise<HourRecord[]> {
  * IO: Get distinct years available in the table
  * Caching: 6h
  */
-export async function getAvailableYears(): Promise<number[]> {
-  const cacheKey = "station-years";
-  const ttlMs = 6 * 60 * 60 * 1000;
+// The archive floor is 2020 (backfill start; also the Glue partition
+// projection's lower bound). A DISTINCT-year query here would carry no
+// partition predicate, forcing Athena to enumerate the entire projected
+// partition space (~30k partitions) — it times out. The year list is known,
+// so just generate it; a data-less year renders the page's empty state.
+const ARCHIVE_START_YEAR = 2020;
 
-  return cached(cacheKey, ttlMs, async () => {
-    const sql = `SELECT DISTINCT CAST(year AS BIGINT) as year FROM station_observations ORDER BY year DESC`;
-    const rows = await runQuery(sql);
-    return rows
-      .map((row) => Number(row.year))
-      .filter((y) => y >= 2020 && y <= 2100)
-      .sort((a, b) => b - a);
-  });
+export async function getAvailableYears(): Promise<number[]> {
+  const currentYear = new Date().getUTCFullYear();
+  const years: number[] = [];
+  for (let y = currentYear; y >= ARCHIVE_START_YEAR; y--) {
+    years.push(y);
+  }
+  return years;
 }
