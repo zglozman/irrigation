@@ -253,63 +253,76 @@ export default function HistoryPage() {
           </h2>
         </div>
 
-        {/* Month labels */}
-        <div className="mb-2 flex">
-          <div className="w-8 shrink-0" />
-          {weeks[0] &&
-            weeks.map((week, weekIdx) => {
-              // Determine which month this week starts in
-              const firstDayInWeek = week.find((d) => d.date);
-              if (!firstDayInWeek) return null;
-              const [, month] = firstDayInWeek.date.split("-");
-              const isFirstWeekOfMonth = weekIdx === 0 || (weeks[weekIdx - 1] && !weeks[weekIdx - 1].find((d) => d.date)?.date?.startsWith(`${history.year}-${month}`));
-              return (
-                <div
-                  key={`month-label-${weekIdx}`}
-                  className="flex flex-1 items-center justify-center text-[9px] font-mono text-fern"
-                >
-                  {isFirstWeekOfMonth && formatMonthLabel(Number(month))}
-                </div>
-              );
-            })}
-        </div>
-
-        {/* Calendar grid */}
-        <div className="inline-flex gap-2 bg-page p-0" style={{ minWidth: "100%" }}>
-          {/* Day labels (mon-sun) */}
-          <div className="flex flex-col gap-1">
-            {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => (
-              <div
-                key={day}
-                className="h-3 w-8 text-center text-[9px] font-mono text-fern"
-              >
-                {day}
-              </div>
-            ))}
+        {/* Labels + grid share one fixed-width unit so the month labels stay
+            column-aligned and the whole calendar scrolls together — a flex-1
+            label row sizes to the VISIBLE width, not the scroll width, and
+            drifts hopelessly out of alignment past the first screenful. */}
+        <div style={{ width: "max-content" }}>
+          {/* Month labels — one cell per week column (12px + 4px gap) */}
+          <div className="mb-2 flex gap-2">
+            <div className="w-8 shrink-0" />
+            <div className="flex gap-1">
+              {weeks.map((week, weekIdx) => {
+                const firstDayInWeek = week.find((d) => d.date);
+                if (!firstDayInWeek) {
+                  return <div key={`month-label-${weekIdx}`} className="w-3" />;
+                }
+                const [, month] = firstDayInWeek.date.split("-");
+                const isFirstWeekOfMonth =
+                  weekIdx === 0 ||
+                  (weeks[weekIdx - 1] &&
+                    !weeks[weekIdx - 1]
+                      .find((d) => d.date)
+                      ?.date?.startsWith(`${history.year}-${month}`));
+                return (
+                  <div
+                    key={`month-label-${weekIdx}`}
+                    className="w-3 overflow-visible whitespace-nowrap text-[9px] font-mono text-fern"
+                  >
+                    {isFirstWeekOfMonth ? formatMonthLabel(Number(month)) : ""}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Weeks */}
-          <div className="flex gap-1">
-            {weeks.map((week, weekIdx) => (
-              <div key={`week-${weekIdx}`} className="flex flex-col gap-1">
-                {week.map((day, dayIdx) => (
-                  <button
-                    key={`${weekIdx}-${dayIdx}`}
-                    onClick={() => day.date && setSelectedDate(day.date)}
-                    disabled={!day.date}
-                    className="transition-opacity hover:opacity-80 disabled:cursor-default"
-                    style={{
-                      width: "12px",
-                      height: "12px",
-                      borderRadius: "3px",
-                      backgroundColor: day.date ? getRainColor(day.rain_in) : "transparent",
-                      cursor: day.date ? "pointer" : "default",
-                    }}
-                    title={day.date ? `${day.date}: ${day.rain_in.toFixed(2)}"` : ""}
-                  />
-                ))}
-              </div>
-            ))}
+          {/* Calendar grid */}
+          <div className="flex gap-2">
+            {/* Day labels (mon-sun) */}
+            <div className="flex flex-col gap-1">
+              {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => (
+                <div
+                  key={day}
+                  className="h-3 w-8 text-center text-[9px] font-mono text-fern"
+                >
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            {/* Weeks */}
+            <div className="flex gap-1">
+              {weeks.map((week, weekIdx) => (
+                <div key={`week-${weekIdx}`} className="flex flex-col gap-1">
+                  {week.map((day, dayIdx) => (
+                    <button
+                      key={`${weekIdx}-${dayIdx}`}
+                      onClick={() => day.date && setSelectedDate(day.date)}
+                      disabled={!day.date}
+                      className="transition-opacity hover:opacity-80 disabled:cursor-default"
+                      style={{
+                        width: "12px",
+                        height: "12px",
+                        borderRadius: "3px",
+                        backgroundColor: day.date ? getRainColor(day.rain_in) : "transparent",
+                        cursor: day.date ? "pointer" : "default",
+                      }}
+                      title={day.date ? `${day.date}: ${day.rain_in.toFixed(2)}"` : ""}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
