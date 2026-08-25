@@ -393,13 +393,18 @@ export async function getWeatherComparison(days: number = 3): Promise<WeatherCom
       }> = [];
       let source: "wunderground" | "none" = "none";
       let stationId: string | null = null;
+      let todayFine: TodayObservation[] = [];
 
       try {
         const creds = await resolveWUCredentials();
         if (creds) {
           stationId = creds.stationId;
-          // Fetch hourly history for past days
-          for (let i = 0; i < days; i++) {
+          // Fetch hourly history for PAST days only (i >= 1) — today comes
+          // from the fine-grained observations feed below; the history
+          // endpoint lags hours behind for the current day, and mixing both
+          // sources for the same day would interleave two accumulation
+          // sequences and corrupt the hourly rain deltas.
+          for (let i = 1; i < days; i++) {
             const d = new Date(now);
             d.setDate(d.getDate() - i);
 
@@ -420,10 +425,22 @@ export async function getWeatherComparison(days: number = 3): Promise<WeatherCom
             }
           }
 
-          // Fetch today's fine-grained observations
+          // Today's actuals: the fine-grained observations feed (~15-min).
+          // These MUST join actualRows — this was the bug that kept the
+          // page at "delivered 0.00in" through a downpour.
           const todayRows = await getWUTodayObservations(creds.stationId, creds.apiKey);
-          // today_fine only uses latest observations
-          // (passed separately below)
+          actualRows.push(...todayRows);
+          todayFine = todayRows.map((o) => ({
+            time_local: o.time_local,
+            temp_f: o.temp_f,
+            wind_mph: o.wind_mph,
+            precip_accum_in: o.precip_accum_in,
+            humidity: o.humidity,
+          }));
+
+          // Bucketing derives hourly rain from accumulation deltas in row
+          // order — keep the combined set chronological.
+          actualRows.sort((a, b) => a.time_utc.localeCompare(b.time_utc));
 
           source = "wunderground";
         }
@@ -437,26 +454,6 @@ export async function getWeatherComparison(days: number = 3): Promise<WeatherCom
 
       // Compute stats
       const stats = computeStats(hours);
-
-      // Fetch today's fine observations for the "today at the station" card
-      let todayFine: TodayObservation[] = [];
-      if (source === "wunderground") {
-        try {
-          const creds = await resolveWUCredentials();
-          if (creds) {
-            const todayObs = await getWUTodayObservations(creds.stationId, creds.apiKey);
-            todayFine = todayObs.map((o) => ({
-              time_local: o.time_local,
-              temp_f: o.temp_f,
-              wind_mph: o.wind_mph,
-              precip_accum_in: o.precip_accum_in,
-              humidity: o.humidity,
-            }));
-          }
-        } catch (error) {
-          console.warn("[WeatherCompare] Failed to fetch today observations:", error);
-        }
-      }
 
       return {
         source,
